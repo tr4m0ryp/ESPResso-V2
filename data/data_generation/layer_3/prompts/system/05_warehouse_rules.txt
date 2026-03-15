@@ -1,0 +1,19 @@
+FINAL WAREHOUSE LEG
+
+The user message specifies the target warehouse market: EU or US.
+
+EU warehouses are located in the Benelux/North Germany logistics
+corridor: Rotterdam, Hamburg, Antwerp, or Venlo. Choose the most
+logical entry point based on the shipping route.
+
+US warehouses are located at major import gateways: Los Angeles area
+(for Pacific routes) or New York/New Jersey area (for Atlantic or
+Suez routes). Choose based on the origin of the shipment.
+
+If the assembly location is distant from the warehouse, include
+intermediate port stops in the leg. For example, assembly in Dhaka
+would route through Chittagong Port, then by sea to the warehouse
+region, then by road to the final warehouse.
+
+The warehouse is always the final destination. The last leg must end
+at the warehouse location.

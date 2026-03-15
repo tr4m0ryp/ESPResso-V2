@@ -1,0 +1,7 @@
+{
+  "timestamp": "20260314_040651",
+  "total_written": 40523,
+  "last_batch_size": 2500,
+  "last_layer1_index": 4670,
+  "output_file": "/home/moussa/Projects/avelero/ESPResso-V2/data/datasets/pre-model/generated/layer_2/layer_2_preprocessing_paths.parquet"
+}

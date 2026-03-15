@@ -1,0 +1,75 @@
+GEOGRAPHIC REFERENCE -- VERIFIED WGS84 COORDINATES
+
+The following locations are verified reference points. Use these
+coordinates when selecting any of these locations. You may also choose
+locations not listed here, using your own geographic knowledge.
+
+--- MAJOR TEXTILE MANUFACTURING CITIES ---
+
+Dhaka, Bangladesh              23.81, 90.41
+Chittagong, Bangladesh         22.36, 91.78
+Ho Chi Minh City, Vietnam      10.82, 106.63
+Hanoi, Vietnam                 21.03, 105.85
+Shanghai, China                31.23, 121.47
+Guangzhou, China               23.13, 113.26
+Suzhou, China                  31.30, 120.62
+Shenzhen, China                22.54, 114.06
+Hangzhou, China                30.27, 120.15
+Shaoxing, China                30.00, 120.58
+Istanbul, Turkey               41.01, 28.98
+Bursa, Turkey                  40.19, 29.06
+Tirupur, India                 11.11, 77.34
+Surat, India                   21.17, 72.83
+Delhi, India                   28.61, 77.21
+Lahore, Pakistan               31.55, 74.35
+Faisalabad, Pakistan           31.42, 73.08
+Phnom Penh, Cambodia           11.56, 104.93
+Jakarta, Indonesia             -6.21, 106.85
+Addis Ababa, Ethiopia           9.02, 38.75
+Lima, Peru                    -12.05, -77.04
+Prato, Italy                   43.88, 11.10
+
+--- MAJOR CONTAINER PORTS ---
+
+Shanghai Yangshan, China       30.63, 122.07
+Ningbo-Zhoushan, China         29.87, 121.88
+Singapore                       1.26, 103.84
+Busan, South Korea             35.10, 129.04
+Rotterdam, Netherlands         51.95, 4.13
+Hamburg, Germany                53.54, 9.93
+Antwerp, Belgium               51.27, 4.39
+Colombo, Sri Lanka              6.95, 79.84
+Chittagong Port, Bangladesh    22.32, 91.82
+Laem Chabang, Thailand         13.07, 100.88
+Port of Los Angeles, USA       33.74, -118.27
+Port of Long Beach, USA        33.75, -118.19
+Port of New York/New Jersey    40.68, -74.04
+Felixstowe, UK                 51.96, 1.30
+
+--- MAJOR CARGO AIRPORTS ---
+
+Hong Kong Intl (HKG)           22.31, 113.91
+Dubai World Central (DWC)      24.90, 55.16
+Frankfurt Main (FRA)           50.03, 8.57
+Memphis Intl (MEM)             35.04, -89.98
+Shanghai Pudong (PVG)          31.14, 121.81
+Singapore Changi (SIN)          1.36, 103.99
+Incheon Intl (ICN)             37.46, 126.44
+
+--- WAREHOUSE AND DISTRIBUTION LOCATIONS ---
+
+EU:
+Rotterdam area, Netherlands    51.92, 4.48
+Hamburg area, Germany           53.55, 9.99
+Antwerp area, Belgium          51.22, 4.40
+Venlo, Netherlands             51.37, 6.17
+
+US:
+Los Angeles area, USA          33.94, -118.41
+New York/New Jersey area, USA  40.68, -74.17
+Savannah, USA                  32.08, -81.09
+
+Note: These are reference coordinates. You are not restricted to these
+locations. When choosing a location from this list, use the coordinates
+provided. When choosing other locations, use your geographic knowledge
+to assign accurate WGS84 coordinates.

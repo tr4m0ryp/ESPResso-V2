@@ -1,0 +1,37 @@
+{
+  "project_root": "ESPResso-V2",
+  "working_dir": "data/data_generation/layer_5",
+  "context_files": [
+    "../../shared/api_client.py",
+    "../../shared/paths.py",
+    "../layer_4/models/models.py",
+    "../layer_3/models/models.py"
+  ],
+  "phases": [
+    {
+      "name": "Phase 1: Foundation",
+      "description": "Data models and configuration -- no interdependencies between these two tasks",
+      "tasks": ["01_data_models.md", "02_configuration.md"]
+    },
+    {
+      "name": "Phase 2: Core components",
+      "description": "Validators, prompt builder, scorer, and API client that depend only on Phase 1 outputs (models, config). All 5 tasks are independent of each other.",
+      "tasks": ["03_passport_verifier.md", "04_coherence_prompt.md", "06_statistical_validator.md", "07_sampled_reward_scorer.md", "08_api_client.md"]
+    },
+    {
+      "name": "Phase 3: Coherence validator and I/O",
+      "description": "Coherence validator depends on prompt builder (04) and API client (08) from Phase 2. I/O layer depends only on Phase 1 models.",
+      "tasks": ["05_coherence_validator.md", "09_io_layer.md"]
+    },
+    {
+      "name": "Phase 4: Integration",
+      "description": "Orchestrator, entry point, and tests depend on all previous components",
+      "tasks": ["10_orchestrator.md", "11_main_entry_point.md"]
+    },
+    {
+      "name": "Phase 5: Testing",
+      "description": "Integration tests depend on all components being implemented",
+      "tasks": ["12_integration_test.md"]
+    }
+  ]
+}

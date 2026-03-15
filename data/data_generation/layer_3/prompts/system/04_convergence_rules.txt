@@ -1,0 +1,31 @@
+MATERIAL CONVERGENCE LOGIC
+
+Products with multiple materials have independent processing chains
+that must converge at an assembly location.
+
+Single convergence (approximately 80% of products):
+All materials arrive at one CMT (Cut, Make, Trim) factory for final
+assembly. This is standard for basic garments such as T-shirts,
+trousers, dresses, and shirts. The assembly step is the first step in
+step_material_mapping that lists multiple materials (e.g., "garment
+assembly", "stitching", "sewing"). All material chains must route to
+the same city for this step.
+
+Progressive convergence (approximately 20% of products):
+Some materials converge at an intermediate sub-assembly point before
+final assembly. This applies to:
+- Footwear: upper components and sole components may be sub-assembled
+  separately before final bonding
+- Technical outerwear: shell fabric and insulation may be quilted or
+  laminated at a sub-assembly step before final garment assembly
+- Tailored garments: body panels and lining may be prepared separately
+
+To identify the assembly step: look for the step in step_material_mapping
+where multiple materials first appear together. Common assembly step
+names include "garment assembly", "stitching", "sewing", "bonding",
+"lasting", and "final assembly".
+
+After the assembly step, all materials travel as a single unit. Post-
+assembly legs use the product name (not individual material names) or
+the first material listed, and represent the combined product moving
+to the warehouse.

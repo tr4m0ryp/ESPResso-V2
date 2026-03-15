@@ -1,0 +1,32 @@
+{
+  "project_root": "ESPResso-V2",
+  "working_dir": "data/data_generation/layer_4",
+  "design_doc": "DESIGN_V2.md",
+  "context_files": [
+    "../../shared/api_client.py",
+    "../../shared/paths.py",
+    "../../layer_3/models/models.py"
+  ],
+  "phases": [
+    {
+      "name": "Phase 1: Foundation",
+      "description": "Data models, configuration, and system prompt -- no interdependencies",
+      "tasks": ["01_data_models.md", "02_configuration.md", "03_system_prompt.md"]
+    },
+    {
+      "name": "Phase 2: Core components",
+      "description": "Components that depend only on Phase 1 outputs (models, config, prompts dir)",
+      "tasks": ["04_prompt_builder.md", "05_api_client.md", "07_validator.md", "08_io_layer.md"]
+    },
+    {
+      "name": "Phase 3: Generation logic",
+      "description": "Generator depends on client (05) and prompt builder (04) from Phase 2",
+      "tasks": ["06_generator.md"]
+    },
+    {
+      "name": "Phase 4: Integration",
+      "description": "Orchestrator and tests depend on all previous components",
+      "tasks": ["09_orchestrator.md", "10_integration_test.md"]
+    }
+  ]
+}

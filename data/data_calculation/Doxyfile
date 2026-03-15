@@ -1,0 +1,40 @@
+# Doxyfile for Carbon Footprint Calculator
+#
+# Generate HTML API documentation from Doxygen-annotated source.
+# Usage: cd data/data_calculation && doxygen Doxyfile
+
+PROJECT_NAME           = "Carbon Footprint Calculator"
+PROJECT_BRIEF          = "Cradle-to-gate carbon footprint calculation per ISO 14040/14044"
+PROJECT_NUMBER         = 1.0
+
+OUTPUT_DIRECTORY       = docs
+INPUT                  = include/ src/
+FILE_PATTERNS          = *.h *.c
+RECURSIVE              = YES
+
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+GENERATE_MAN           = NO
+
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+
+TAB_SIZE               = 4
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = YES
+
+TYPEDEF_HIDES_STRUCT   = YES
+SHOW_INCLUDE_FILES     = YES

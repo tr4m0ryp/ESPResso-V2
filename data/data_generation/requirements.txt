@@ -1,0 +1,23 @@
+# Data Generation Pipeline Requirements
+
+# HTTP client for API calls
+requests>=2.28.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# For potential async support
+aiohttp>=3.8.0
+
+# Data handling
+pandas>=1.5.0
+
+# Progress bars (optional)
+tqdm>=4.64.0
+
+# Type checking (development)
+mypy>=1.0.0
+
+# Testing (development)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

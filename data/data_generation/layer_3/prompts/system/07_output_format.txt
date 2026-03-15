@@ -1,0 +1,123 @@
+OUTPUT FORMAT
+
+Respond with ONLY a JSON array of transport leg objects. No text before
+or after the JSON. Each leg object has exactly these 13 fields:
+
+{
+  "leg_index": int,          sequential starting at 0
+  "material": str,           EXACT material name from input (every material must appear)
+  "from_step": str,          processing step at origin
+  "to_step": str,            processing step at destination
+  "from_location": str,      "City, Country"
+  "to_location": str,        "City, Country"
+  "from_lat": float,         WGS84 latitude of origin
+  "from_lon": float,         WGS84 longitude of origin
+  "to_lat": float,           WGS84 latitude of destination
+  "to_lon": float,           WGS84 longitude of destination
+  "distance_km": float,      total distance for this leg
+  "transport_modes": [str],  ordered modes used
+  "reasoning": str           narrative describing the journey
+}
+
+COMPLETE WORKED EXAMPLE
+
+Product: cotton-polyester blend T-shirt (0.25 kg)
+Materials: fibre, cotton (60%, 0.15 kg), fibre, polyester (40%, 0.10 kg)
+step_material_mapping:
+  fibre, cotton: [ginning, spinning, dyeing, garment_assembly]
+  fibre, polyester: [extrusion, texturing, garment_assembly]
+Warehouse: EU
+
+[
+  {
+    "leg_index": 0,
+    "material": "fibre, cotton",
+    "from_step": "ginning",
+    "to_step": "spinning",
+    "from_location": "Rajkot, India",
+    "to_location": "Coimbatore, India",
+    "from_lat": 22.30, "from_lon": 70.80,
+    "to_lat": 11.00, "to_lon": 76.96,
+    "distance_km": 1540.0,
+    "transport_modes": ["road"],
+    "reasoning": "Truck 1540 km via NH48 and NH44 from Gujarat cotton belt to Tamil Nadu spinning cluster. Major north-south highway corridor through western India."
+  },
+  {
+    "leg_index": 1,
+    "material": "fibre, cotton",
+    "from_step": "spinning",
+    "to_step": "dyeing",
+    "from_location": "Coimbatore, India",
+    "to_location": "Tirupur, India",
+    "from_lat": 11.00, "from_lon": 76.96,
+    "to_lat": 11.11, "to_lon": 77.34,
+    "distance_km": 52.0,
+    "transport_modes": ["road"],
+    "reasoning": "Short 52 km transfer from Coimbatore spinning mills to Tirupur dyeing cluster via NH381. Adjacent cities forming a continuous textile corridor."
+  },
+  {
+    "leg_index": 2,
+    "material": "fibre, cotton",
+    "from_step": "dyeing",
+    "to_step": "garment_assembly",
+    "from_location": "Tirupur, India",
+    "to_location": "Dhaka, Bangladesh",
+    "from_lat": 11.11, "from_lon": 77.34,
+    "to_lat": 23.81, "to_lon": 90.41,
+    "distance_km": 2850.0,
+    "transport_modes": ["road", "sea", "road"],
+    "reasoning": "Trucked 420 km to Chennai Port. Container shipped 2100 km across Bay of Bengal to Chittagong (5-day transit). Final 330 km by road to Dhaka garment district."
+  },
+  {
+    "leg_index": 3,
+    "material": "fibre, polyester",
+    "from_step": "extrusion",
+    "to_step": "texturing",
+    "from_location": "Taoyuan, Taiwan",
+    "to_location": "Taoyuan, Taiwan",
+    "from_lat": 24.99, "from_lon": 121.31,
+    "to_lat": 24.99, "to_lon": 121.31,
+    "distance_km": 5.0,
+    "transport_modes": ["road"],
+    "reasoning": "Internal transfer 5 km within Taoyuan industrial zone. Extrusion and texturing co-located in the same petrochemical complex."
+  },
+  {
+    "leg_index": 4,
+    "material": "fibre, polyester",
+    "from_step": "texturing",
+    "to_step": "garment_assembly",
+    "from_location": "Taoyuan, Taiwan",
+    "to_location": "Dhaka, Bangladesh",
+    "from_lat": 24.99, "from_lon": 121.31,
+    "to_lat": 23.81, "to_lon": 90.41,
+    "distance_km": 4620.0,
+    "transport_modes": ["road", "sea", "road"],
+    "reasoning": "Trucked 35 km to Keelung Port. Container shipped 4250 km via South China Sea and Strait of Malacca to Chittagong (8-day transit). Final 335 km by road to Dhaka garment factories."
+  },
+  {
+    "leg_index": 5,
+    "material": "fibre, cotton",
+    "from_step": "garment_assembly",
+    "to_step": "warehouse",
+    "from_location": "Dhaka, Bangladesh",
+    "to_location": "Rotterdam, Netherlands",
+    "from_lat": 23.81, "from_lon": 90.41,
+    "to_lat": 51.92, "to_lon": 4.48,
+    "distance_km": 15420.0,
+    "transport_modes": ["road", "sea", "road"],
+    "reasoning": "Finished T-shirts trucked 265 km to Chittagong Port. Container shipped 14800 km via Indian Ocean, Suez Canal, Mediterranean to Rotterdam (28-day transit). Final 35 km by truck to warehouse."
+  }
+]
+Key points demonstrated:
+- Material names in "material" field are EXACT copies from the input
+  (e.g. "fibre, cotton" not "cotton")
+- Cotton chain: 3 legs (ginning, spinning, dyeing in India to assembly
+  in Bangladesh)
+- Polyester chain: 2 legs (extrusion/texturing in Taiwan to assembly
+  in Bangladesh)
+- Both materials converge at garment_assembly in Dhaka
+- Final warehouse leg carries assembled product to Rotterdam (EU)
+- All chains end at the SAME destination (Rotterdam, Netherlands)
+- Multi-modal legs show segment-by-segment reasoning with distances
+- leg_index is sequential across all legs (0-5)
+- Distances reflect actual transport routes, not straight-line distance

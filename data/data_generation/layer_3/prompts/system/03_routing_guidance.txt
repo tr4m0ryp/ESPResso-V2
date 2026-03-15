@@ -1,0 +1,37 @@
+TRANSPORT ROUTING CONTEXT
+
+This section provides contextual knowledge for reasoning about
+transport modes. These are typical patterns, not rigid rules. Use your
+judgment based on the specific route geography.
+
+Regional infrastructure context:
+- South and Southeast Asia: dense road networks connect manufacturing
+  clusters; major ports at Singapore, Colombo, Chittagong, Laem Chabang
+- China: extensive rail network (China Railway Express to Europe);
+  major ports along the eastern seaboard
+- Europe: well-developed rail freight corridors; short-sea shipping in
+  the Mediterranean and North Sea; dense motorway network
+- North America: long-haul trucking dominant; intermodal rail for
+  coast-to-coast; major West Coast ports for Asian imports
+
+Common freight route patterns:
+- Asia to Europe: container ship via Suez Canal (transit 25-30 days)
+- Asia to US West Coast: transpacific container ship (transit 14-20 days)
+- Asia to US East Coast: transpacific then Panama Canal, or via Suez
+- Intra-Asia: short-sea shipping or road, depending on distance
+- Europe internal: road or rail, often combined
+
+Multi-modal journey structure:
+- First mile: road transport from factory/processing facility to the
+  nearest port, rail terminal, or airport
+- Trunk haul: sea, rail, or air for the main intercontinental or
+  long-distance segment
+- Last mile: road transport from port/terminal to destination facility
+
+Distance and mode relationships (general guidance):
+- Under 500 km: typically road only
+- 500 to 2000 km: road, rail, or short-sea shipping
+- Over 2000 km: includes a sea or air trunk segment, with road first
+  and last mile
+- Air freight: reserved for high-value, time-sensitive, or lightweight
+  shipments; rare for bulk textile transport

@@ -1,0 +1,72 @@
+TASK DEFINITION
+
+You will receive a user message containing:
+- Product category and subcategory
+- Materials with their weights in kg
+- step_material_mapping: a dictionary mapping each material to its
+  ordered list of processing steps
+- Target warehouse location (EU or US)
+- A seed number for variety
+
+For each material in the product, you must:
+
+1. Assign a realistic geographic location (City, Country) and WGS84
+   coordinates (latitude, longitude) to every processing step in that
+   material's chain. Choose locations where that type of processing
+   actually occurs in the global textile industry.
+
+2. For each pair of consecutive processing steps, determine the
+   transport leg between them:
+   - The transport modes used, as an ordered array reflecting the
+     multi-modal journey (e.g., ["road", "sea", "road"] for a typical
+     intercontinental shipment)
+   - The total distance in km for the leg, accounting for actual
+     transport routes (road distances, shipping lanes, not straight
+     lines)
+   - A reasoning narrative describing each segment of the journey,
+     including intermediate waypoints such as ports or rail terminals
+
+3. Converge all material chains at the assembly step. All materials
+   must arrive at the same assembly location.
+
+4. After assembly, route the finished product to the target warehouse
+   as the final leg.
+
+The allowed transport modes are: road, rail, sea, air, inland_waterway.
+
+CRITICAL RULES (failure to follow these causes automatic rejection):
+
+1. EVERY MATERIAL MUST HAVE TRANSPORT LEGS:
+   You MUST generate at least one transport leg for EVERY material
+   listed in the MATERIALS section. If a product has 3 materials, all 3
+   must appear in your output legs. If a product has 4 materials, all 4
+   must appear. Do NOT skip minor or secondary materials. Even a material
+   at 10% weight needs its own processing chain with transport legs.
+   The validator checks that every material name from the input appears
+   in at least one leg's "material" field.
+
+2. EXACT MATERIAL NAMES:
+   The "material" field in every transport leg MUST be copied EXACTLY
+   from the MATERIALS list in the user message. Do NOT shorten, rename,
+   or paraphrase material names. For example:
+   - Input "fibre, polyester" -> write "fibre, polyester"
+     (NOT "polyester", NOT "polyester fibre")
+   - Input "cellulose fibre" -> write "cellulose fibre"
+     (NOT "cellulose", NOT "rayon")
+   - Input "fibre, flax" -> write "fibre, flax"
+     (NOT "flax", NOT "linen")
+   The validator performs an exact string match.
+
+3. ALL CHAINS MUST END AT THE SAME DESTINATION:
+   After the assembly step, the final warehouse leg must be identical
+   for all material chains. All materials must converge at the assembly
+   location and the finished product must be shipped to a single
+   warehouse.
+
+4. NO ZERO-DISTANCE LEGS:
+   Every leg must have distance_km >= 1.0. If two steps happen at the
+   same facility, use a minimum distance of 1.0 km for the internal
+   transfer.
+
+Output ONLY a JSON array of transport leg objects. No explanation text
+before or after the JSON.

@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-01-23T00:34:59.362127",
+  "layer": 4,
+  "model_used": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+  "processing_stats": {
+    "start_time": "2026-01-22T18:54:40.388030",
+    "end_time": null,
+    "layer3_records_read": 67858,
+    "packaging_configs_generated": 103956,
+    "valid_configs": 103956,
+    "invalid_configs": 0,
+    "api_calls_made": 0,
+    "api_errors": 15878,
+    "processing_errors": 0,
+    "checkpoints_created": 0
+  },
+  "config_settings": {
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "model": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "parallel_workers": 150,
+    "checkpoint_interval": 5000,
+    "api_clients": 5
+  },
+  "output_format": "complete_merged_dataset (Layer 3 + Layer 4)"
+}

@@ -1,0 +1,19 @@
+LOCATION VARIETY GUIDANCE
+
+Vary your location choices across records. Do not default to the same
+city for every product with similar materials.
+
+Use the seed number provided in the user message to influence your
+choices. Different seeds should lead to different location selections
+for similar products. For example, cotton sourcing could come from
+India, Egypt, Uzbekistan, the United States, or Brazil depending on
+the seed.
+
+Consider secondary manufacturing regions, not only the largest hubs.
+Vietnam, Cambodia, Ethiopia, and Peru are growing textile producers
+alongside the dominant centers of China, India, and Bangladesh.
+
+Assign different sourcing regions for different materials within the
+same product. Cotton may originate from India while polyester comes
+from Taiwan or South Korea. Wool may come from Australia or New
+Zealand while synthetic lining comes from China.
