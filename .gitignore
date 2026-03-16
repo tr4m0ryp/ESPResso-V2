@@ -1,0 +1,117 @@
+# -----------------------------------------------
+# Python
+# -----------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# -----------------------------------------------
+# Virtual environments
+# -----------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+
+# -----------------------------------------------
+# Distribution and packaging
+# -----------------------------------------------
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.whl
+sdist/
+
+# -----------------------------------------------
+# Testing and coverage
+# -----------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# -----------------------------------------------
+# Environment and secrets
+# -----------------------------------------------
+.env
+.env.*
+!.env.example
+
+# -----------------------------------------------
+# IDE and editor config
+# -----------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------
+# OS-specific files
+# -----------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# -----------------------------------------------
+# Compiled and binary files
+# -----------------------------------------------
+*.o
+*.so
+*.dylib
+*.exe
+*.out
+*.a
+
+# -----------------------------------------------
+# Log files
+# -----------------------------------------------
+*.log
+
+# -----------------------------------------------
+# Backup and temporary files
+# -----------------------------------------------
+*.bak
+*.tmp
+*.temp
+*.orig
+
+# -----------------------------------------------
+# Node.js
+# -----------------------------------------------
+node_modules/
+
+# -----------------------------------------------
+# Jupyter Notebooks
+# -----------------------------------------------
+.ipynb_checkpoints/
+
+# -----------------------------------------------
+# Project-specific
+# -----------------------------------------------
+# Recovery/temp parquet files at repo root
+/layer_3_transport_scenarios_recover.parquet
+
+# Pipeline checkpoints (resumable state, not final data)
+data/datasets/pre-model/generated/**/checkpoints/
+*_recover.parquet
+
+# Discards and review artifacts
+*_discards.jsonl
+
+# Layer 6 analysis output
+data/data_generation/layer_6/analysis/output/
+
+# Compiled C binaries
+data/data_generation/layer_6/layer6_calculate
+data/data_calculation/layer6_calculate
