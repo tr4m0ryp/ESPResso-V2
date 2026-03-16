@@ -7,6 +7,7 @@ CoherencePromptBuilder for prompt construction and response parsing.
 """
 
 import logging
+import time
 from typing import Dict, List
 
 from data.data_generation.layer_5.config.config import Layer5Config
@@ -35,90 +36,92 @@ class CoherenceValidator:
 
     def validate_batch(
         self, records: List[CompleteProductRecord]
-    ) -> Dict[str, CrossLayerCoherenceResult]:
+    ) -> List[CrossLayerCoherenceResult]:
         """Evaluate cross-layer coherence for a batch of up to 50 records.
 
-        Steps:
-            1. Build prompt via self.prompt_builder.build_batch_prompt(records)
-            2. Token budget: self.config.max_tokens_instruct (8000)
-            3. Call API for batch coherence evaluation
-            4. Parse response via self.prompt_builder.parse_batch_response()
-            5. Fill missing results with defaults (scores 0.7, recommendation "review")
-            6. Log summary: count evaluated, mean coherence, parse failures
-
-        Args:
-            records: List of CompleteProductRecord instances (max 50).
-
-        Returns:
-            Dictionary mapping subcategory_id to CrossLayerCoherenceResult.
-            Every input record is guaranteed to have an entry.
+        Returns a list of results in the SAME ORDER as input records.
+        Uses position-based keys (record_1, record_2, ...) to avoid
+        collisions when multiple records share the same subcategory_id.
         """
-        record_ids = [r.subcategory_id for r in records]
-
         if not records:
-            return {}
+            return []
 
-        try:
-            # 1. Build prompt
-            prompt = self.prompt_builder.build_batch_prompt(records)
+        n = len(records)
+        # Position-based keys for the prompt/parse round-trip
+        position_keys = [f"record_{i + 1}" for i in range(n)]
+        max_retries = getattr(self.config, 'max_retries', 3)
+        retry_delay = getattr(self.config, 'retry_delay', 2.0)
 
-            # 2-3. Call API with configured token budget
-            response = self.api_client.generate_batch_coherence_evaluation(
-                prompt=prompt,
-                temperature=self.config.temperature_instruct,
-                max_tokens=self.config.max_tokens_instruct,
-            )
-
-            # API returned None (e.g. no keys configured)
-            if response is None:
-                logger.warning(
-                    "Coherence API returned None for batch of %d records; "
-                    "using defaults for all",
-                    len(records),
-                )
-                return self._defaults_for_all(record_ids)
-
-            # 4. Parse response
-            results = self.prompt_builder.parse_batch_response(
-                response, record_ids
-            )
-
-            # 5. Fill any missing entries with defaults
-            missing_count = 0
-            for rid in record_ids:
-                if rid not in results:
-                    missing_count += 1
-                    results[rid] = self._default_result()
-
-            if missing_count > 0:
-                logger.warning(
-                    "Filled %d/%d missing coherence results with defaults",
-                    missing_count,
-                    len(record_ids),
+        for attempt in range(max_retries):
+            try:
+                prompt = self.prompt_builder.build_batch_prompt(records)
+                response = self.api_client.generate_batch_coherence_evaluation(
+                    prompt=prompt,
+                    temperature=self.config.temperature_instruct,
+                    max_tokens=self.config.max_tokens_instruct,
                 )
 
-            # 6. Log summary
-            self._log_summary(results, record_ids)
+                if response is None:
+                    logger.warning(
+                        "Coherence API returned None (attempt %d/%d) "
+                        "for batch of %d records",
+                        attempt + 1, max_retries, n,
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (2 ** attempt))
+                        continue
+                    return [self._default_result() for _ in range(n)]
 
-            return results
+                parsed = self.prompt_builder.parse_batch_response(
+                    response, position_keys
+                )
 
-        except Exception as e:
-            logger.error(
-                "Coherence validation failed for batch of %d records: %s",
-                len(records),
-                e,
-            )
-            return self._defaults_for_all(record_ids)
+                # Build ordered list from parsed dict
+                result_list = []
+                missing = 0
+                for key in position_keys:
+                    r = parsed.get(key)
+                    if r is None:
+                        missing += 1
+                        result_list.append(self._default_result())
+                    else:
+                        result_list.append(r)
+
+                # All missing -> parse failure, retry
+                if missing == n:
+                    logger.warning(
+                        "Parse returned no results (attempt %d/%d), retrying",
+                        attempt + 1, max_retries,
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (2 ** attempt))
+                        continue
+
+                if missing > 0:
+                    logger.warning(
+                        "Filled %d/%d missing coherence results with defaults",
+                        missing, n,
+                    )
+
+                self._log_list_summary(result_list)
+                return result_list
+
+            except Exception as e:
+                logger.error(
+                    "Coherence validation error (attempt %d/%d) for "
+                    "batch of %d records: %s",
+                    attempt + 1, max_retries, n, e,
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (2 ** attempt))
+                    continue
+                return [self._default_result() for _ in range(n)]
+
+        return [self._default_result() for _ in range(n)]
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _defaults_for_all(
-        self, record_ids: List[str]
-    ) -> Dict[str, CrossLayerCoherenceResult]:
-        """Return default results for every record in the batch."""
-        return {rid: self._default_result() for rid in record_ids}
 
     @staticmethod
     def _default_result() -> CrossLayerCoherenceResult:
@@ -132,26 +135,16 @@ class CoherenceValidator:
         )
 
     @staticmethod
-    def _log_summary(
-        results: Dict[str, CrossLayerCoherenceResult],
-        record_ids: List[str],
+    def _log_list_summary(
+        results: List[CrossLayerCoherenceResult],
     ) -> None:
         """Log a concise summary of the batch evaluation."""
-        evaluated = len(results)
-        if evaluated == 0:
+        if not results:
             logger.info("Coherence batch: 0 records evaluated")
             return
-
-        scores = [r.overall_coherence_score for r in results.values()]
-        mean_coherence = sum(scores) / len(scores)
-        parse_failures = evaluated - len(
-            [rid for rid in record_ids if rid in results]
-        )
-
+        scores = [r.overall_coherence_score for r in results]
         logger.info(
-            "Coherence batch: %d evaluated, mean coherence=%.3f, "
-            "parse failures=%d",
-            evaluated,
-            mean_coherence,
-            max(parse_failures, 0),
+            "Coherence batch: %d evaluated, mean coherence=%.3f",
+            len(results),
+            sum(scores) / len(scores),
         )

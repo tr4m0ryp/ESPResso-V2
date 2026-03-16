@@ -62,10 +62,12 @@ class DecisionMaker:
                 factors.extend(coherence.contradictions_found)
             return self._result(*args, "reject", cs, factors)
 
-        # Rule 3: duplicate -> reject
+        # Rule 3: duplicate -> review (near-duplicates may still be valid
+        # records with different transport legs; PEFCR baselines produce
+        # similar upstream data intentionally)
         if statistical and statistical.is_duplicate:
             factors.append("Duplicate (similarity=%.3f)" % statistical.duplicate_similarity)
-            return self._result(*args, "reject", cs, factors)
+            return self._result(*args, "review", cs, factors)
 
         # Rule 4: high coherence + clean stats -> accept
         clean = self._stats_clean(statistical)

@@ -1,0 +1,13 @@
+{
+  "validation_summary": {
+    "total_records": 53926,
+    "accepted": 22,
+    "review": 50458,
+    "rejected": 3446,
+    "processing_stats": {
+      "write_counter": 53926,
+      "temp_files_created": 109
+    }
+  },
+  "timestamp": "20260315_211434"
+}

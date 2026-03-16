@@ -111,7 +111,7 @@ class Layer5Config:
     # Token limit sized for batch processing of 50 records.
 
     api_base_url: str = "http://localhost:3000/v1"
-    api_model_instruct: str = "claude-sonnet-4-6"
+    api_model_instruct: str = "claude-sonnet-4.5"
     api_key_env_var: str = "UVA_API_KEY"
 
     # Provider switching (nvidia or uva)
@@ -123,6 +123,18 @@ class Layer5Config:
 
     def __post_init__(self):
         """Initialize fields that depend on environment variables."""
+        # Load .env.uva from data/data_generation/ (same as other layers)
+        env_path = (
+            Path(__file__).resolve().parent.parent.parent / ".env.uva"
+        )
+        if env_path.exists():
+            with open(env_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ.setdefault(key, value)
+
         # Provider-specific API overrides
         if self.api_provider == "nvidia":
             nvidia_model = os.environ.get(

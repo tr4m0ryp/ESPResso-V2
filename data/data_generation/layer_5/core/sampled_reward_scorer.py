@@ -7,6 +7,7 @@ quality from the sample distribution, drastically reducing API calls.
 
 import logging
 import statistics
+import threading
 from typing import Dict, List, Optional, Any
 
 from data.data_generation.layer_5.config.config import Layer5Config
@@ -30,6 +31,7 @@ class SampledRewardScorer:
     def __init__(self, config: Layer5Config, api_client: Layer5Client):
         self.config = config
         self.api_client = api_client
+        self._lock = threading.Lock()
         self.sampled_scores: List[float] = []
         self.total_records_seen: int = 0
         self.total_records_sampled: int = 0
@@ -46,7 +48,8 @@ class SampledRewardScorer:
         config.should_sample_for_reward(), scores via LLM reward API
         and accumulates into running statistics.
         """
-        self.total_records_seen += 1
+        with self._lock:
+            self.total_records_seen += 1
 
         if not self.config.should_sample_for_reward(
             record_index, total_records
@@ -58,12 +61,13 @@ class SampledRewardScorer:
                 dataset_estimated_quality=self.get_dataset_quality_estimate(),
             )
 
-        # Record falls within sample -- score it
+        # Record falls within sample -- score it (API call outside lock)
         score = self._score_record(record)
 
         if score is not None:
-            self.sampled_scores.append(score)
-            self.total_records_sampled += 1
+            with self._lock:
+                self.sampled_scores.append(score)
+                self.total_records_sampled += 1
             interpretation = self.get_quality_interpretation(score)
             logger.info(
                 "Reward score for record %d: %.3f (%s) "

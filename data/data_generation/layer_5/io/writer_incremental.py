@@ -293,7 +293,8 @@ class IncrementalValidationOutputWriter:
         
         # Add timestamp to final filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        final_path = Path(str(final_path).replace('.csv', f'_{timestamp}.csv'))
+        stem = final_path.stem
+        final_path = final_path.parent / f"{stem}_{timestamp}.csv"
         
         # Ensure output directory exists
         final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -328,9 +329,6 @@ class IncrementalValidationOutputWriter:
         with open(input_file, 'r', encoding='utf-8') as infile:
             reader = csv.DictReader(infile)
             for row in reader:
-                # Skip header rows from temp files (they all have headers)
-                if set(row.keys()) == set(writer.fieldnames):
-                    continue
                 writer.writerow(row)
                 record_count += 1
         return record_count

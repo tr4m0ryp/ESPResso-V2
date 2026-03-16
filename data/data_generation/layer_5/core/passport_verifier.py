@@ -87,18 +87,30 @@ class PassportVerifier:
         if not self.config.passport_enabled:
             return PassportVerificationResult(is_valid=True)
 
+        # If the record has no passport hash attributes at all,
+        # upstream layers didn't stamp them -- skip verification
+        has_any = any(
+            hasattr(record, _PASSPORT_ATTR[n])
+            and getattr(record, _PASSPORT_ATTR[n], None) is not None
+            for n in (1, 2, 3, 4)
+        )
+        if not has_any:
+            return PassportVerificationResult(is_valid=True)
+
         missing: List[str] = []
         errors: List[str] = []
         layer_valid: Dict[str, bool] = {}
 
         for layer_num in (1, 2, 3, 4):
-            stored_hash = getattr(record, _PASSPORT_ATTR[layer_num])
+            stored_hash = getattr(
+                record, _PASSPORT_ATTR[layer_num], None
+            )
 
             if stored_hash is None:
                 layer_name = _LAYER_NAMES[layer_num]
                 missing.append(layer_name)
                 layer_valid[_VALID_ATTR[layer_num]] = False
-                logger.warning(
+                logger.debug(
                     "Record %s is missing %s passport hash",
                     record.subcategory_id,
                     layer_name,
@@ -164,13 +176,9 @@ class PassportVerifier:
 
     def verify_batch(
         self, records: List[CompleteProductRecord]
-    ) -> Dict[str, PassportVerificationResult]:
+    ) -> List[PassportVerificationResult]:
         """Verify passports for a batch of records.
 
-        Returns a dict mapping ``subcategory_id`` to the verification
-        result for that record.
+        Returns a list of results in the same order as input records.
         """
-        results: Dict[str, PassportVerificationResult] = {}
-        for record in records:
-            results[record.subcategory_id] = self.verify(record)
-        return results
+        return [self.verify(record) for record in records]

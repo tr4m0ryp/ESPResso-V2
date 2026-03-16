@@ -69,6 +69,20 @@ Examples:
         help="Fraction of records to score for reward (default: 0.03 = 3%%)",
     )
 
+    # Parallel processing
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel worker threads (default: config/env)",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=int,
+        default=None,
+        help="Max requests per minute (default: config/env)",
+    )
+
     # Stage control
     parser.add_argument(
         "--no-passport",
@@ -164,7 +178,12 @@ def main() -> None:
         sys.exit(0 if success else 1)
 
     # Run the pipeline
-    result = orchestrator.run_pipeline(max_records=args.max_records)
+    result = orchestrator.run_pipeline(
+        max_records=args.max_records,
+        workers=args.workers,
+        rate_limit=args.rate_limit,
+        resume=args.resume,
+    )
 
     if result["success"]:
         stats = result.get("statistics", {})

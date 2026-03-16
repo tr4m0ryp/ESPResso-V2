@@ -1,10 +1,4 @@
-"""
-Cross-Layer Coherence Prompt Builder for Layer 5 Validation.
-
-Builds prompts for LLM-based cross-layer coherence evaluation.
-Focuses on inter-layer contradictions and lifecycle plausibility,
-NOT per-field validation.
-"""
+"""Cross-Layer Coherence Prompt Builder for Layer 5 Validation."""
 
 import json
 import logging
@@ -65,16 +59,16 @@ class CoherencePromptBuilder:
             record_blocks.append(block)
 
         records_text = "\n\n".join(record_blocks)
-        example_id = records[0].subcategory_id if records else "record_id"
 
         return (
             f"Evaluate the following {len(records)} product records for "
             f"cross-layer coherence.\n\n"
             f"{records_text}\n\n"
-            f"For EACH record, output a JSON object keyed by record ID.\n\n"
+            f"For EACH record, output a JSON object keyed by its "
+            f"record_N identifier (record_1, record_2, etc.).\n\n"
             f"Expected output format:\n"
             f"{{\n"
-            f'  "{example_id}": {{\n'
+            f'  "record_1": {{\n'
             f'    "lifecycle_coherence_score": 0.XX,\n'
             f'    "cross_layer_contradiction_score": 0.XX,\n'
             f'    "overall_coherence_score": 0.XX,\n'
@@ -113,13 +107,19 @@ class CoherencePromptBuilder:
 
         results: Dict[str, CrossLayerCoherenceResult] = {}
 
-        for rid in record_ids:
-            entry = parsed_data.get(rid)
+        for i, rid in enumerate(record_ids):
+            # Look up by batch index key (record_1, record_2, ...)
+            key = f"record_{i + 1}"
+            entry = parsed_data.get(key)
+            # Fallback: try the record_id directly (old format)
+            if entry is None:
+                entry = parsed_data.get(rid)
             if entry is None:
                 logger.warning(
-                    "Missing coherence result for record %s; "
+                    "Missing coherence result for %s (key %s); "
                     "using default",
                     rid,
+                    key,
                 )
                 results[rid] = self._default_result()
                 continue
@@ -205,9 +205,9 @@ class CoherencePromptBuilder:
         categories_str = ", ".join(record.packaging_categories)
 
         return (
-            f"RECORD {index} (ID: {record.subcategory_id}):\n"
-            f"  Product: {record.subcategory_name} "
-            f"({record.category_name}), "
+            f"record_{index} ({record.subcategory_name}, "
+            f"{record.subcategory_id}):\n"
+            f"  Product: {record.category_name}, "
             f"{record.total_weight_kg:.3f}kg\n"
             f"  Materials: {materials_str}\n"
             f"  Processing: {processing_str}\n"

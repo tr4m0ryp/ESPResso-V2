@@ -37,14 +37,15 @@ PACKAGING_EMISSION_FACTORS: Dict[str, float] = {
 }
 
 # Multinomial logit model parameters for transport mode selection
+# Fitted from 761K transport legs in the Layer 4 dataset (53,926 records)
 TRANSPORT_MODE_PARAMS: Dict[str, Dict[str, float]] = {
-    'road': {'alpha': 2.5, 'beta': -0.0003, 'd_ref': 500},
-    'rail': {'alpha': 1.8, 'beta': -0.00015, 'd_ref': 1500},
+    'road': {'alpha': 9.124443, 'beta': -0.01, 'd_ref': 500.0},
+    'rail': {'alpha': -0.008712, 'beta': -0.00310896, 'd_ref': 1500.0},
+    'sea': {'alpha': 1.291277, 'beta': 0.00369985, 'd_ref': 5000.0},
+    'air': {'alpha': -2.077025, 'beta': 0.00483928, 'd_ref': 8000.0},
     'inland_waterway': {
-        'alpha': 0.5, 'beta': -0.0002, 'd_ref': 800
+        'alpha': 0.106072, 'beta': -0.00325982, 'd_ref': 800.0
     },
-    'sea': {'alpha': 1.0, 'beta': 0.00008, 'd_ref': 5000},
-    'air': {'alpha': -2.0, 'beta': 0.00025, 'd_ref': 8000}
 }
 
 # Adjustment factor for unmodelled emissions
