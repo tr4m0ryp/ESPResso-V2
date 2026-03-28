@@ -148,6 +148,9 @@ class CalculationResult:
     transport_mode_probabilities: Dict[str, float] = field(
         default_factory=dict
     )
+    transport_mode_fractions: Dict[str, float] = field(
+        default_factory=dict
+    )
     weighted_ef_g_co2e_tkm: float = 0.0
     calculation_notes: List[str] = field(default_factory=list)
     is_valid: bool = True
