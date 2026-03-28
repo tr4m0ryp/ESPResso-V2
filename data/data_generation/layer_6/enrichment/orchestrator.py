@@ -7,7 +7,9 @@ retries failures, and writes the final enriched dataset.
 
 import json
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -41,6 +43,7 @@ class EnrichmentOrchestrator:
         self.collector = FailedRecordCollector()
         self.checkpoint_mgr = CheckpointManager(config)
         self._system_prompt = get_system_prompt()
+        self._stats_lock = threading.Lock()
         self._stats: Dict[str, int] = {
             'total_input': 0, 'already_done': 0,
             'batches_processed': 0, 'passed_validation': 0,
@@ -84,33 +87,50 @@ class EnrichmentOrchestrator:
 
     # -- Batch processing ----------------------------------------------
 
+    def _inc_stat(self, key: str, count: int = 1) -> None:
+        """Thread-safe stat increment."""
+        with self._stats_lock:
+            self._stats[key] += count
+
     def _process_batches(self, df: pd.DataFrame) -> None:
-        """Process all records in batches through LLM extraction."""
+        """Process all records in parallel batches through LLM extraction."""
         records = df.to_dict('records')
         bs = self.config.batch_size
         batches = [records[i:i + bs] for i in range(0, len(records), bs)]
+        num_workers = self.config.num_workers
         logger.info(
-            "Processing %d records in %d batches (size %d)",
-            len(records), len(batches), bs,
+            "Processing %d records in %d batches (size %d, %d workers)",
+            len(records), len(batches), bs, num_workers,
         )
 
-        for idx, batch in enumerate(batches, 1):
-            try:
-                self._process_single_batch(batch)
-            except Exception as exc:
-                logger.error("Error in batch %d/%d: %s", idx, len(batches), exc)
-                self.checkpoint_mgr.force_flush()
-                raise
+        completed = 0
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(self._process_single_batch, batch): idx
+                for idx, batch in enumerate(batches, 1)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.error("Batch %d/%d failed: %s", idx, len(batches), exc)
+                    self._inc_stat('api_errors')
 
-            self._stats['batches_processed'] += 1
-            if self.checkpoint_mgr.should_checkpoint():
-                self.checkpoint_mgr.flush()
-            if idx % 50 == 0:
-                logger.info(
-                    "Progress: batch %d/%d, %d passed, %d failed, %d errors",
-                    idx, len(batches), self._stats['passed_validation'],
-                    self._stats['failed_validation'], self._stats['api_errors'],
-                )
+                completed += 1
+                self._inc_stat('batches_processed')
+                if self.checkpoint_mgr.should_checkpoint():
+                    self.checkpoint_mgr.flush()
+                if completed % 50 == 0:
+                    logger.info(
+                        "Progress: %d/%d batches, %d passed, %d failed, %d errors",
+                        completed, len(batches),
+                        self._stats['passed_validation'],
+                        self._stats['failed_validation'],
+                        self._stats['api_errors'],
+                    )
+
+        self.checkpoint_mgr.force_flush()
 
     def _process_single_batch(self, batch: List[Dict]) -> None:
         """Run LLM extraction + validation on one batch."""
@@ -154,7 +174,7 @@ class EnrichmentOrchestrator:
             if extracted is None:
                 if not is_retry:
                     self.collector.add_failure(rec, None)
-                self._stats[fail_key] += 1
+                self._inc_stat(fail_key)
                 continue
 
             total_km = float(rec.get('total_distance_km', 0.0))
@@ -165,11 +185,11 @@ class EnrichmentOrchestrator:
             valid_flags.append(vr.is_valid)
 
             if vr.is_valid:
-                self._stats[pass_key] += 1
+                self._inc_stat(pass_key)
             else:
                 if not is_retry:
                     self.collector.add_failure(rec, vr)
-                self._stats[fail_key] += 1
+                self._inc_stat(fail_key)
 
         return valid_results, valid_flags
 

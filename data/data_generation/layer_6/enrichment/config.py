@@ -47,7 +47,7 @@ class EnrichmentConfig:
     # -- API settings ------------------------------------------------------
 
     api_base_url: str = field(default='http://localhost:3000/v1')
-    api_model: str = field(default='claude-sonnet-4-5-20241022')
+    api_model: str = field(default='gpt-oss-120')
     api_key_env_var: str = field(default='UVA_API_KEY')
     temperature: float = field(default=0.2)
     max_tokens: int = field(default=8000)
@@ -58,6 +58,8 @@ class EnrichmentConfig:
     batch_size: int = field(default=20)
     # Write checkpoint every N records
     checkpoint_interval: int = field(default=5000)
+    # Parallel workers for concurrent API calls
+    num_workers: int = field(default=30)
 
     # -- Retry settings ----------------------------------------------------
 

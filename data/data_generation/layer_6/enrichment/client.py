@@ -17,8 +17,9 @@ import re
 import time
 from typing import Any, Dict, List
 
+import requests
+
 from data.data_generation.layer_6.enrichment.config import EnrichmentConfig
-from data.data_generation.shared.api_client import FunctionClient
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +50,8 @@ class EnrichmentClient:
             config: EnrichmentConfig instance with API settings.
         """
         self.config = config
-        self.client = FunctionClient(
-            api_key=config.api_key,
-            model_id=config.api_model,
-            base_url=config.api_base_url,
-            layer_name="layer_6_enrichment",
-        )
+        self.base_url = config.api_base_url.rstrip("/")
+        self.api_key = config.api_key
         logger.info(
             "Initialized EnrichmentClient with model: %s", config.api_model
         )
@@ -86,29 +83,30 @@ class EnrichmentClient:
             Exception: Re-raises the last error after max_retries
                        exhausted (orchestrator handles fail-open).
         """
-        url = f"{self.client.base_url}/chat/completions"
+        url = f"{self.base_url}/responses"
         payload: Dict[str, Any] = {
             "model": self.config.api_model,
-            "messages": [
+            "input": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
         }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key and self.api_key != "uva-local":
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         last_exc: Exception = RuntimeError("No attempts made")
 
         for attempt in range(self.config.max_retries):
             try:
-                response = self.client._make_api_call(url, payload)
-                raw_text = response.content or response.reasoning or ""
+                raw_text = self._call_sse(url, payload, headers)
                 result = self._parse_json_response(raw_text)
                 if result:
                     return result
-                # Empty parse result -- treat as retriable failure
                 raise ValueError(
-                    "JSON parse returned empty list from non-empty response"
+                    "JSON parse returned empty list from response"
                 )
             except Exception as exc:
                 last_exc = exc
@@ -130,6 +128,42 @@ class EnrichmentClient:
                     )
 
         raise last_exc
+
+    def _call_sse(
+        self,
+        url: str,
+        payload: Dict[str, Any],
+        headers: Dict[str, str],
+    ) -> str:
+        """POST to the SSE endpoint and collect the full response text.
+
+        Streams the response, parses SSE events, and concatenates all
+        response.output_text.delta events into the final text.
+        """
+        resp = requests.post(
+            url, json=payload, headers=headers, stream=True, timeout=120
+        )
+        resp.raise_for_status()
+
+        full_text = ""
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            data_str = line[6:]
+            try:
+                event = json.loads(data_str)
+            except json.JSONDecodeError:
+                continue
+            if event.get("type") == "response.output_text.delta":
+                full_text += event.get("delta", "")
+            elif event.get("type") == "response.completed":
+                # Extract from completed event as fallback
+                resp_data = event.get("response", {})
+                for item in resp_data.get("output", []):
+                    for part in item.get("content", []):
+                        if part.get("type") == "output_text":
+                            return part.get("text", full_text)
+        return full_text
 
     def test_connection(self) -> bool:
         """Verify the API is reachable with a minimal prompt.
@@ -192,8 +226,10 @@ class EnrichmentClient:
             logger.warning("Empty response text received")
             return []
 
-        strip_fn = getattr(self.client, "_strip_thinking_tags", None)
-        text = strip_fn(raw_text) if callable(strip_fn) else raw_text
+        # Strip thinking tags
+        text = re.sub(
+            r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>", "", raw_text
+        ).strip()
 
         # 1. Markdown fence: ```json ... ``` or ``` ... ```
         fence_match = re.search(
