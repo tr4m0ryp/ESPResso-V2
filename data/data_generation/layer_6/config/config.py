@@ -52,6 +52,11 @@ TRANSPORT_MODE_PARAMS: Dict[str, Dict[str, float]] = {
 # (internal logistics 1% + waste 1%)
 ADJUSTMENT_FACTOR = 1.02
 
+# Output column name constants (D10 renames)
+TRANSPORT_DISTANCES_COL = 'transport_mode_distances_km'
+TRANSPORT_FRACTIONS_COL = 'transport_mode_fractions'
+TRANSPORT_EF_COL = 'effective_ef_g_co2e_tkm'
+
 
 @dataclass
 class Layer6Config:
@@ -64,6 +69,15 @@ class Layer6Config:
             'layer_4/layer_4_complete_dataset.parquet'
         )
     )
+    enriched_input_path: str = field(
+        default=(
+            'data/datasets/pre-model/generated/'
+            'layer_6/enriched_transport_dataset.parquet'
+        )
+    )
+
+    # Feature flag: use enriched per-mode distances vs logit model
+    use_enriched_transport: bool = field(default=True)
 
     # Reference database paths (Parquet)
     materials_db_path: str = field(
@@ -141,6 +155,9 @@ class Layer6Config:
             self.materials_db_path,
             self.processing_db_path,
         ]
+
+        if self.use_enriched_transport:
+            required_files.append(self.enriched_input_path)
 
         for file_path in required_files:
             if not Path(file_path).exists():

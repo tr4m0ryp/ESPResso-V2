@@ -15,14 +15,21 @@ Dependencies:
     databases module for CalculationResult.
 """
 
+import ast
 import json
 import logging
+import traceback
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
-from data.data_generation.layer_6.config.config import Layer6Config
+from data.data_generation.layer_6.config.config import (
+    Layer6Config,
+    TRANSPORT_DISTANCES_COL,
+    TRANSPORT_FRACTIONS_COL,
+    TRANSPORT_EF_COL,
+)
 from data.data_generation.layer_6.core.calculator import (
     CarbonFootprintCalculator,
 )
@@ -95,45 +102,42 @@ def _normalize_smm(smm_raw: Any) -> str:
 
 def add_cf_fields(
     row: Dict[str, Any],
-    result: CalculationResult
+    result: CalculationResult,
+    use_enriched: bool = False,
 ) -> Dict[str, Any]:
     """Add calculated CF fields to an output row dict.
+
+    When use_enriched is True, output uses D10 column names:
+        transport_mode_distances_km, transport_mode_fractions,
+        effective_ef_g_co2e_tkm.
+    When False, preserves legacy column names for backward compat.
 
     Args:
         row: The output row dictionary.
         result: Calculation result for this record.
+        use_enriched: Whether enriched transport path is active.
 
     Returns:
         Row dict with CF fields added.
     """
-    row['cf_raw_materials_kg_co2e'] = round(
-        result.cf_raw_materials_kg_co2e, 6
-    )
-    row['cf_transport_kg_co2e'] = round(
-        result.cf_transport_kg_co2e, 6
-    )
-    row['cf_processing_kg_co2e'] = round(
-        result.cf_processing_kg_co2e, 6
-    )
-    row['cf_packaging_kg_co2e'] = round(
-        result.cf_packaging_kg_co2e, 6
-    )
-    row['cf_modelled_kg_co2e'] = round(
-        result.cf_modelled_kg_co2e, 6
-    )
-    row['cf_adjustment_kg_co2e'] = round(
-        result.cf_adjustment_kg_co2e, 6
-    )
-    row['cf_total_kg_co2e'] = round(
-        result.cf_total_kg_co2e, 6
-    )
-    row['transport_mode_probabilities'] = json.dumps(
-        {k: round(v, 4)
-         for k, v in result.transport_mode_probabilities.items()}
-    )
-    row['weighted_ef_g_co2e_tkm'] = round(
-        result.weighted_ef_g_co2e_tkm, 2
-    )
+    row['cf_raw_materials_kg_co2e'] = round(result.cf_raw_materials_kg_co2e, 6)
+    row['cf_transport_kg_co2e'] = round(result.cf_transport_kg_co2e, 6)
+    row['cf_processing_kg_co2e'] = round(result.cf_processing_kg_co2e, 6)
+    row['cf_packaging_kg_co2e'] = round(result.cf_packaging_kg_co2e, 6)
+    row['cf_modelled_kg_co2e'] = round(result.cf_modelled_kg_co2e, 6)
+    row['cf_adjustment_kg_co2e'] = round(result.cf_adjustment_kg_co2e, 6)
+    row['cf_total_kg_co2e'] = round(result.cf_total_kg_co2e, 6)
+
+    mode_data = {k: round(v, 4) for k, v in result.transport_mode_probabilities.items()}
+    if use_enriched:
+        row[TRANSPORT_DISTANCES_COL] = json.dumps(mode_data)
+        row[TRANSPORT_FRACTIONS_COL] = json.dumps(
+            {k: round(v, 4) for k, v in result.transport_mode_fractions.items()})
+        row[TRANSPORT_EF_COL] = round(result.weighted_ef_g_co2e_tkm, 2)
+    else:
+        row['transport_mode_probabilities'] = json.dumps(mode_data)
+        row['weighted_ef_g_co2e_tkm'] = round(result.weighted_ef_g_co2e_tkm, 2)
+
     row['calculation_timestamp'] = datetime.now().isoformat()
     row['calculation_version'] = 'v2.0'
     return row
@@ -158,11 +162,13 @@ def process_input_file(
         or None on failure.
     """
     try:
-        input_df = pd.read_parquet(config.input_path)
-        logger.info(
-            "Read %d records from %s",
-            len(input_df), config.input_path
+        input_path = (
+            config.enriched_input_path
+            if config.use_enriched_transport
+            else config.input_path
         )
+        input_df = pd.read_parquet(input_path)
+        logger.info("Read %d records from %s", len(input_df), input_path)
 
         output_rows = []
         record_count = 0
@@ -177,7 +183,6 @@ def process_input_file(
                 if isinstance(weights_raw, list):
                     _weights = weights_raw
                 else:
-                    import ast
                     try:
                         _weights = json.loads(str(weights_raw))
                     except json.JSONDecodeError:
@@ -218,7 +223,9 @@ def process_input_file(
             out['step_material_mapping'] = _normalize_smm(
                 row.get('step_material_mapping', '{}')
             )
-            out = add_cf_fields(out, result)
+            out = add_cf_fields(
+                out, result, config.use_enriched_transport
+            )
             output_rows.append(out)
 
             on_result(result)
@@ -238,6 +245,5 @@ def process_input_file(
 
     except Exception as e:
         logger.error("Error processing input file: %s", e)
-        import traceback
         logger.error(traceback.format_exc())
         return None

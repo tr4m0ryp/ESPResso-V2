@@ -3,6 +3,10 @@ Transport Mode Selection Model for Layer 6.
 
 Implements the multinomial logit model for transport mode selection
 based on distance, as described in the research paper.
+
+NOTE: When enriched transport data is available (use_enriched_transport),
+the pipeline uses calculate_transport_from_actuals() in components.py
+instead of this model. This class is retained for legacy/comparison use.
 """
 
 import math

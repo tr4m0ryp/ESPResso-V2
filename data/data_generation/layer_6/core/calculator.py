@@ -1,22 +1,20 @@
 """Carbon Footprint Calculator for Layer 6.
 
-Loads reference databases from Parquet and computes per-record
-carbon footprints by delegating to the components module.
-
-Primary classes:
-    CarbonFootprintCalculator -- Main calculator.
-
-Dependencies:
-    pandas, databases, components, material_aliases, transport_model.
+Loads reference databases and computes per-record carbon footprints.
+Supports both enriched (per-mode distance) and logit transport paths.
 """
 
+import ast
 import json
 import logging
 from typing import Dict, List, Optional, Any
 
 import pandas as pd
 
-from data.data_generation.layer_6.config.config import Layer6Config
+from data.data_generation.layer_6.config.config import (
+    Layer6Config,
+    TRANSPORT_EMISSION_FACTORS,
+)
 from data.data_generation.layer_6.core.databases import (
     MaterialDatabase, ProcessingDatabase, CalculationResult
 )
@@ -29,6 +27,29 @@ from data.data_generation.layer_6.core.transport_model import (
 from data.data_generation.layer_6.core import components
 
 logger = logging.getLogger(__name__)
+
+_MODE_DISTANCE_COLUMNS = {
+    'road': 'road_km',
+    'sea': 'sea_km',
+    'rail': 'rail_km',
+    'air': 'air_km',
+    'inland_waterway': 'inland_waterway_km',
+}
+
+
+def _extract_mode_distances(record: Dict[str, Any]) -> Dict[str, float]:
+    """Extract per-mode distances from enriched record columns.
+
+    Args:
+        record: Input record dict with road_km, sea_km, etc.
+
+    Returns:
+        Dict mapping mode name to distance in km.
+    """
+    return {
+        mode: float(record.get(col, 0.0) or 0.0)
+        for mode, col in _MODE_DISTANCE_COLUMNS.items()
+    }
 
 
 class CarbonFootprintCalculator:
@@ -66,19 +87,10 @@ class CarbonFootprintCalculator:
                 except (ValueError, TypeError):
                     continue
 
-            logger.info(
-                "Loaded %d materials from %s",
-                len(self.material_db.materials),
-                self.config.materials_db_path
-            )
-
-            ref_names = set(self.material_db.materials.keys())
-            errors = validate_aliases(ref_names)
+            logger.info("Loaded %d materials", len(self.material_db.materials))
+            errors = validate_aliases(set(self.material_db.materials.keys()))
             if errors:
-                logger.warning(
-                    "%d alias targets missing from reference DB",
-                    len(errors)
-                )
+                logger.warning("%d alias targets missing from reference DB", len(errors))
         except Exception as e:
             logger.error("Failed to load materials database: %s", e)
             return False
@@ -100,21 +112,13 @@ class CarbonFootprintCalculator:
                 except (ValueError, TypeError):
                     continue
 
-            logger.info(
-                "Loaded %d material-process combinations from %s",
-                len(self.processing_db.combinations),
-                self.config.processing_db_path
-            )
+            logger.info("Loaded %d material-process combos", len(self.processing_db.combinations))
         except Exception as e:
-            logger.error(
-                "Failed to load processing database: %s", e
-            )
+            logger.error("Failed to load processing database: %s", e)
             return False
 
         try:
-            steps_df = pd.read_parquet(
-                self.config.processing_steps_path
-            )
+            steps_df = pd.read_parquet(self.config.processing_steps_path)
             for _, row in steps_df.iterrows():
                 name = str(row.get('process_name', ''))
                 try:
@@ -124,25 +128,16 @@ class CarbonFootprintCalculator:
                     self.step_ef_lookup[name] = ef
                 except (ValueError, TypeError):
                     continue
-            logger.info(
-                "Loaded %d step EFs from %s",
-                len(self.step_ef_lookup),
-                self.config.processing_steps_path
-            )
+            logger.info("Loaded %d step EFs", len(self.step_ef_lookup))
         except FileNotFoundError:
-            logger.warning(
-                "Processing steps file not found: %s, "
-                "step-level fallback disabled",
-                self.config.processing_steps_path
-            )
+            logger.warning("Processing steps not found, step fallback disabled")
         except Exception as e:
-            logger.warning(
-                "Failed to load processing steps: %s", e
-            )
+            logger.warning("Failed to load processing steps: %s", e)
 
         return True
 
-    def _parse_json_array(self, value: Any) -> List[Any]:
+    @staticmethod
+    def _parse_json_array(value: Any) -> List[Any]:
         """Parse JSON array from string or pass through list."""
         if isinstance(value, list):
             return value
@@ -152,7 +147,6 @@ class CarbonFootprintCalculator:
             return json.loads(str(value))
         except json.JSONDecodeError:
             try:
-                import ast
                 return ast.literal_eval(str(value))
             except (ValueError, SyntaxError):
                 return []
@@ -203,16 +197,25 @@ class CarbonFootprintCalculator:
         result.cf_raw_materials_kg_co2e = cf_raw
         result.calculation_notes.extend(raw_notes)
 
-        # 2. Transport
-        cf_transport, mode_probs, weighted_ef = (
-            components.calculate_transport(
-                total_weight, transport_distance,
-                self.transport_model
-            )
-        )
-        result.cf_transport_kg_co2e = cf_transport
-        result.transport_mode_probabilities = mode_probs
-        result.weighted_ef_g_co2e_tkm = weighted_ef
+        # 2. Transport (enriched actual-distance or logit fallback)
+        if self.config.use_enriched_transport:
+            mode_dists = _extract_mode_distances(record)
+            cf_transport, _, mode_fracs, weighted_ef = (
+                components.calculate_transport_from_actuals(
+                    total_weight, mode_dists,
+                    TRANSPORT_EMISSION_FACTORS))
+            result.cf_transport_kg_co2e = cf_transport
+            result.transport_mode_probabilities = mode_dists
+            result.transport_mode_fractions = mode_fracs
+            result.weighted_ef_g_co2e_tkm = weighted_ef
+        else:
+            cf_transport, mode_probs, weighted_ef = (
+                components.calculate_transport_logit(
+                    total_weight, transport_distance,
+                    self.transport_model))
+            result.cf_transport_kg_co2e = cf_transport
+            result.transport_mode_probabilities = mode_probs
+            result.weighted_ef_g_co2e_tkm = weighted_ef
 
         # 3. Processing
         cf_processing, proc_notes = (
@@ -252,30 +255,27 @@ class CarbonFootprintCalculator:
 
         return result
 
+    _VALIDATION_LIMITS = [
+        ('cf_raw_materials_kg_co2e', 50.0, 'raw materials'),
+        ('cf_transport_kg_co2e', 10.0, 'transport'),
+        ('cf_processing_kg_co2e', 30.0, 'processing'),
+        ('cf_packaging_kg_co2e', 2.0, 'packaging'),
+        ('cf_total_kg_co2e', 80.0, 'total'),
+    ]
+
     def validate_result(
-        self,
-        result: CalculationResult
+        self, result: CalculationResult
     ) -> List[str]:
         """Validate calculation result for sanity."""
         issues = []
-        if result.cf_raw_materials_kg_co2e < 0:
-            issues.append("Negative raw materials footprint")
-        if result.cf_transport_kg_co2e < 0:
-            issues.append("Negative transport footprint")
-        if result.cf_processing_kg_co2e < 0:
-            issues.append("Negative processing footprint")
-        if result.cf_packaging_kg_co2e < 0:
-            issues.append("Negative packaging footprint")
-        if result.cf_raw_materials_kg_co2e > 50.0:
-            issues.append("Raw materials footprint > 50 kgCO2e")
-        if result.cf_transport_kg_co2e > 10.0:
-            issues.append("Transport footprint > 10 kgCO2e")
-        if result.cf_processing_kg_co2e > 30.0:
-            issues.append("Processing footprint > 30 kgCO2e")
-        if result.cf_packaging_kg_co2e > 2.0:
-            issues.append("Packaging footprint > 2 kgCO2e")
-        if result.cf_total_kg_co2e > 80.0:
-            issues.append("Total footprint > 80 kgCO2e")
+        for attr, limit, label in self._VALIDATION_LIMITS:
+            val = getattr(result, attr)
+            if val < 0:
+                issues.append(f"Negative {label} footprint")
+            elif val > limit:
+                issues.append(
+                    f"{label.title()} footprint > {limit} kgCO2e"
+                )
         return issues
 
     def get_statistics(self) -> Dict[str, Any]:

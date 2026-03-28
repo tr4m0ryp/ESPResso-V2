@@ -6,7 +6,8 @@ are used by CarbonFootprintCalculator as a mixin-style delegation.
 
 Primary functions:
     calculate_raw_materials -- CF from material emission factors.
-    calculate_transport -- CF from distance-weighted mode selection.
+    calculate_transport_from_actuals -- CF from actual per-mode distances.
+    calculate_transport_logit -- CF via multinomial logit model (legacy).
     calculate_processing -- CF from material-process combinations.
     calculate_packaging -- CF from packaging category EFs.
 
@@ -78,12 +79,12 @@ def calculate_raw_materials(
     return cf_raw, notes
 
 
-def calculate_transport(
+def calculate_transport_logit(
     weight_kg: float,
     distance_km: float,
     transport_model: TransportModeModel
 ) -> Tuple[float, Dict[str, float], float]:
-    """Calculate transport carbon footprint.
+    """Calculate transport CF via multinomial logit model (legacy).
 
     CF_transport = (W/1000) * D * (EF_weighted/1000)
 
@@ -103,6 +104,47 @@ def calculate_transport(
         result['mode_probabilities'],
         result['weighted_ef_g_co2e_tkm']
     )
+
+
+def calculate_transport_from_actuals(
+    weight_kg: float,
+    mode_distances_km: Dict[str, float],
+    emission_factors: Dict[str, float]
+) -> Tuple[float, Dict[str, float], Dict[str, float], float]:
+    """Calculate transport CF from actual per-mode distances.
+
+    Args:
+        weight_kg: Total product weight in kg.
+        mode_distances_km: Dict mode -> distance km (road, sea, etc.).
+        emission_factors: Dict mode -> EF in g CO2e/tkm.
+
+    Returns:
+        (footprint_kg_co2e, mode_distances_km, mode_fractions, effective_ef)
+    """
+    weight_tonnes = weight_kg / 1000.0
+    footprint = 0.0
+
+    for mode, distance in mode_distances_km.items():
+        if distance > 0:
+            ef = emission_factors.get(mode, 0.0)
+            footprint += weight_tonnes * distance * (ef / 1000.0)
+
+    total_km = sum(mode_distances_km.values())
+
+    if total_km > 0:
+        mode_fractions = {
+            mode: dist / total_km
+            for mode, dist in mode_distances_km.items()
+        }
+        effective_ef = sum(
+            mode_fractions[mode] * emission_factors.get(mode, 0.0)
+            for mode in mode_fractions
+        )
+    else:
+        mode_fractions = {mode: 0.0 for mode in mode_distances_km}
+        effective_ef = 0.0
+
+    return footprint, mode_distances_km, mode_fractions, effective_ef
 
 
 def get_material_family(name: str) -> Optional[str]:
