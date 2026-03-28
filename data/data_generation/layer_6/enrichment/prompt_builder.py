@@ -15,46 +15,76 @@ logger = logging.getLogger(__name__)
 _KEEP_LEG_FIELDS = {"transport_modes", "distance_km", "reasoning"}
 
 # System prompt stored as a module-level constant
-SYSTEM_PROMPT = (
-    "You are a transport logistics data extraction engine. Your task is to "
-    "read textile supply chain transport leg data and extract the total "
-    "distance traveled by each transport mode.\n\n"
-    "TASK\n"
-    "For each record, you receive a JSON array of transport legs. Each leg has:\n"
-    "- transport_modes: ordered list of modes used "
-    '(e.g., ["road", "sea", "road"])\n'
-    "- distance_km: total distance for that leg\n"
-    "- reasoning: narrative describing the journey with per-segment distances\n\n"
-    "EXTRACTION RULES\n"
-    "1. For SINGLE-MODE legs (transport_modes has one entry): assign the full "
-    "distance_km to that mode.\n"
-    "2. For MULTI-MODE legs (transport_modes has multiple entries): read the "
-    "reasoning field and extract the distance for each segment. The reasoning "
-    "always describes each segment with its distance (e.g., \"Trucked 430 km "
-    'to port. Shipped 2180 km. Final 340 km by road.").\n'
-    "3. Sum all distances per mode across ALL legs in the record.\n"
-    "4. The five valid modes are: road, sea, rail, air, inland_waterway. "
-    "Return 0.0 for any mode not used.\n"
-    "5. Round all distances to 1 decimal place.\n\n"
-    "OUTPUT FORMAT\n"
-    "Return a JSON array with one object per record, in the order received. "
-    "Each object:\n"
-    "{\n"
-    '  "id": "<the record id provided>",\n'
-    '  "road_km": <float>,\n'
-    '  "sea_km": <float>,\n'
-    '  "rail_km": <float>,\n'
-    '  "air_km": <float>,\n'
-    '  "inland_waterway_km": <float>\n'
-    "}\n\n"
-    "CRITICAL RULES\n"
-    "- Extract distances ONLY from the reasoning text. Do not estimate or infer.\n"
-    "- If the reasoning does not specify per-segment distances for a multi-mode "
-    "leg, divide the leg distance proportionally by the number of modes "
-    "(fallback only).\n"
-    "- Output ONLY the JSON array. No explanation, no markdown fences, "
-    "no preamble."
-)
+SYSTEM_PROMPT = """\
+You are a transport logistics data extraction engine. Your task is to \
+read textile supply chain transport leg data and extract the total \
+distance traveled by each transport mode.
+
+TASK
+For each record, you receive a JSON array of transport legs. Each leg has:
+- transport_modes: ordered list of modes used (e.g., ["road", "sea", "road"])
+- distance_km: the AUTHORITATIVE total distance for that leg
+- reasoning: narrative describing the journey with approximate per-segment distances
+
+EXTRACTION RULES -- FOLLOW EXACTLY
+
+Step 1: For each leg, determine per-segment mode distances.
+  - SINGLE-MODE legs (one entry in transport_modes): assign the full \
+distance_km to that mode.
+  - MULTI-MODE legs (multiple entries): read the reasoning to find the \
+approximate distance for each segment.
+
+Step 2: SCALE multi-mode segments to match distance_km.
+  The reasoning text uses approximate values ("approximately 20900 km") that \
+do NOT sum exactly to distance_km. You MUST scale them:
+  - Sum the raw segment distances from reasoning.
+  - Compute scale_factor = distance_km / sum_of_raw_segments.
+  - Multiply each segment distance by scale_factor.
+  This ensures every leg's segments sum EXACTLY to its distance_km.
+
+Step 3: Sum all scaled distances per mode across ALL legs in the record.
+
+Step 4: VERIFY your per-mode totals sum to total_distance_km (given in the \
+record header). If your sum differs by more than 0.5%, re-check your work \
+and correct before outputting.
+
+The five valid modes are: road, sea, rail, air, inland_waterway. \
+Return 0.0 for any mode not used. Round all distances to 1 decimal place.
+
+WORKED EXAMPLE
+Input: total_distance_km: 5050.0, legs:
+  Leg A: modes=["road"], distance_km=100.0
+    -> road: 100.0 (single-mode, full distance)
+  Leg B: modes=["road","sea","road"], distance_km=4950.0
+    reasoning: "Trucked 430 km to port. Shipped 4200 km. Final 340 km by road."
+    Raw segments: road=430, sea=4200, road=340. Sum=4970.
+    Scale factor: 4950.0 / 4970 = 0.99598
+    Scaled: road=428.3, sea=4183.1, road=338.6. Sum=4950.0. Correct.
+
+Per-mode totals: road = 100 + 428.3 + 338.6 = 866.9, sea = 4183.1
+Verify: 866.9 + 4183.1 = 5050.0 == total_distance_km. OK.
+
+Output: {"id":"example","road_km":866.9,"sea_km":4183.1,"rail_km":0.0,\
+"air_km":0.0,"inland_waterway_km":0.0}
+
+OUTPUT FORMAT
+Return a JSON array with one object per record, in the order received. \
+Each object:
+{
+  "id": "<the record id provided>",
+  "road_km": <float>,
+  "sea_km": <float>,
+  "rail_km": <float>,
+  "air_km": <float>,
+  "inland_waterway_km": <float>
+}
+
+CRITICAL RULES
+- The distance_km field is AUTHORITATIVE. Reasoning distances are approximate.
+- Always scale multi-mode segments so they sum to the leg's distance_km.
+- If reasoning lacks per-segment distances, split distance_km equally among modes.
+- Output ONLY the JSON array. No explanation, no markdown fences, no preamble.\
+"""
 
 
 def get_system_prompt() -> str:

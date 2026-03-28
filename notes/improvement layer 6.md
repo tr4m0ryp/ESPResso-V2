@@ -259,3 +259,16 @@ De-sloppify fixes:
 - Removed dead variable in data_joiner.py
 
 Smoke test: 10/10 passing.
+
+### 2026-03-28: Parallelization and prompt improvement
+
+**Parallelization:** Added ThreadPoolExecutor-based parallel processing (default 30 workers). Thread-safe locks added to CheckpointManager, FailedRecordCollector, and orchestrator stats. New `num_workers` config field and `--workers` CLI flag.
+
+**Prompt improvement:** Original prompt had 84% failure rate at 1% tolerance because reasoning text uses approximate distances ("approximately 20900 km") that don't match leg `distance_km`. Root cause: 4% mean gap between reasoning segment sums and leg distances across 255 multi-modal legs analyzed.
+
+Fixed by adding three elements to system prompt:
+1. Explicit scaling instruction: extract raw segments from reasoning, compute scale_factor = distance_km / raw_sum, apply to each segment
+2. Verification step: check per-mode totals sum to total_distance_km before outputting
+3. Worked example demonstrating the full extraction-scaling-verification flow
+
+Result: 60/60 test records pass at 1% tolerance. Mean discrepancy 0.00%. Zero retries needed.
