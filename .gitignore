@@ -121,4 +121,5 @@ data/data_calculation/layer6_calculate
 # -----------------------------------------------
 .claude/
 notes/
+tasks/
 research/
