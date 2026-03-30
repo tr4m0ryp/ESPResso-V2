@@ -115,3 +115,10 @@ data/data_generation/layer_6/analysis/output/
 # Compiled C binaries
 data/data_generation/layer_6/layer6_calculate
 data/data_calculation/layer6_calculate
+
+# -----------------------------------------------
+# Claude Code scaffolding
+# -----------------------------------------------
+.claude/
+notes/
+research/

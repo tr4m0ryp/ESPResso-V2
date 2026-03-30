@@ -46,10 +46,12 @@ class EnrichmentConfig:
 
     # -- API settings ------------------------------------------------------
 
-    api_base_url: str = field(default='http://localhost:3000/v1')
-    api_model: str = field(default='gpt-oss-120')
-    api_key_env_var: str = field(default='UVA_API_KEY')
-    temperature: float = field(default=0.2)
+    api_base_url: str = field(
+        default='https://generativelanguage.googleapis.com/v1beta/openai'
+    )
+    api_model: str = field(default='gemini-3-flash-preview')
+    api_key_env_var: str = field(default='GEMINI_API_KEY')
+    temperature: float = field(default=0.5)
     max_tokens: int = field(default=8000)
 
     # -- Batch settings ----------------------------------------------------
@@ -59,7 +61,7 @@ class EnrichmentConfig:
     # Write checkpoint every N records
     checkpoint_interval: int = field(default=5000)
     # Parallel workers for concurrent API calls
-    num_workers: int = field(default=30)
+    num_workers: int = field(default=100)
 
     # -- Retry settings ----------------------------------------------------
 
@@ -86,9 +88,17 @@ class EnrichmentConfig:
     # -- API key -----------------------------------------------------------
 
     @property
-    def api_key(self) -> str:
-        """Return API key from environment (defaults to 'uva-local')."""
-        return os.environ.get(self.api_key_env_var, 'uva-local')
+    def api_keys(self) -> list:
+        """Return list of API keys from environment (comma-separated)."""
+        raw = os.environ.get(self.api_key_env_var, '')
+        if not raw:
+            logger.warning(
+                '%s not set in environment', self.api_key_env_var
+            )
+            return []
+        keys = [k.strip() for k in raw.split(',') if k.strip()]
+        logger.info('Loaded %d API key(s)', len(keys))
+        return keys
 
     # -- Validation --------------------------------------------------------
 

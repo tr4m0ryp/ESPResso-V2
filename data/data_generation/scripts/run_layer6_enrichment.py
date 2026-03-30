@@ -104,8 +104,8 @@ Examples:
         help='Enable verbose (DEBUG) logging'
     )
     parser.add_argument(
-        '--workers', '-w', type=int, default=30,
-        help='Number of parallel workers (default: 30)'
+        '--workers', '-w', type=int, default=100,
+        help='Number of parallel workers (default: 100)'
     )
     parser.add_argument(
         '--no-resume', action='store_true',
@@ -143,6 +143,7 @@ def main() -> int:
     main_logger.info("  Workers: %d", config.num_workers)
     main_logger.info("  Checkpoint interval: %d", config.checkpoint_interval)
     main_logger.info("  Model: %s", config.api_model)
+    main_logger.info("  API keys: %d", len(config.api_keys))
 
     # If --no-resume, clear any existing checkpoints before starting
     if args.no_resume:
