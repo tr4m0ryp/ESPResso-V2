@@ -130,7 +130,6 @@ data/datasets/model/*.parquet
 # Model training artifacts (checkpoints, experiment logs, weights)
 model/*/checkpoints/
 model/*/runs.jsonl
-model/data/*.csv
 
 # -----------------------------------------------
 # Claude Code scaffolding
