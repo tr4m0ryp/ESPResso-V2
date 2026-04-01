@@ -62,6 +62,27 @@ Layers 1-6 are complete. ~50K validated records across 17 product categories.
 1. Create `model/<approach-name>/` with `src/` and `notebooks/` subdirectories.
 2. Organize `src/` into logical subdirectories by concern.
 3. Create `manager.ipynb` that imports and runs the src modules.
+4. Include `src/evaluation/plots.py` with publication-quality visualizations from day one.
+
+## Publication Visualizations
+
+Every model approach must include a plotting module (`src/evaluation/plots.py`) that generates publication-ready figures. These are not optional -- they are required for research paper output and for diagnosing model behavior during development.
+
+**Required plots (generated after every training run):**
+1. **Training dynamics** (2x2): train/val loss, per-head losses, LR schedule, auxiliary loss.
+2. **Predicted vs actual** (1x3): scatter per output head with R2 annotation and y=x reference.
+3. **Residual diagnostics** (2x3): residual scatter + error distribution histograms per head.
+4. **Tier degradation curves**: MAE vs data availability tier per head (line plot).
+5. **Per-tier MAE heatmap**: annotated heatmap (heads x tiers).
+6. **Gate/attention distributions**: violin plots of gate values or attention scores per tier.
+
+**Formatting standards:**
+- matplotlib + seaborn only (both available on Colab).
+- Colorblind-friendly palette: seaborn "colorblind" or viridis/cividis colormaps.
+- 300 DPI, font size 10 for labels, 8 for ticks.
+- Every function accepts `save_path=None` -- saves PNG if provided, always calls `plt.show()` then `plt.close()`.
+- Plots saved to `{checkpoint_dir}/plots/` on Google Drive for persistence across sessions.
+- No emojis in titles, labels, or annotations.
 
 ## Google Colab Workflow
 

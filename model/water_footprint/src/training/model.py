@@ -1,7 +1,7 @@
-"""WA1Model -- Cross-Attention Geo-Aware Water Footprint Network.
+"""WA2Model -- Cross-Attention Geo-Aware Water Footprint Network.
 
-Assembles 5 encoders, 2 GeoAttentionBlocks, shared trunk, and 3 output
-heads. Implements tier-based masking in forward() per D2 and F11.
+Assembles 5 encoders, 2 multi-layer GeoAttentionBlocks, residual trunk,
+and 3 MLP output heads. Implements tier-based masking in forward().
 """
 
 from typing import Any, Dict, Optional
@@ -76,38 +76,48 @@ class WA1Model(nn.Module):
         # Cross-attention blocks (share location keys)
         self.material_geo = GeoAttentionBlock(
             d, config.cross_attn_heads, config.vocab_materials,
-            config.cross_attn_dropout, config.gate_hidden_dim)
+            config.cross_attn_dropout, config.gate_hidden_dim,
+            n_layers=config.cross_attn_layers)
         self.step_geo = GeoAttentionBlock(
             d, config.cross_attn_heads, config.vocab_steps,
-            config.cross_attn_dropout, config.gate_hidden_dim)
+            config.cross_attn_dropout, config.gate_hidden_dim,
+            n_layers=config.cross_attn_layers)
 
         # Learned missing embeddings
         self.missing_material = nn.Parameter(torch.randn(d) * 0.02)
         self.missing_step = nn.Parameter(torch.randn(d) * 0.02)
         self.missing_location = nn.Parameter(torch.randn(d) * 0.02)
         self.missing_weight = nn.Parameter(torch.zeros(1))
-        self.missing_packaging = nn.Parameter(torch.randn(16) * 0.02)
+        self.missing_packaging = nn.Parameter(torch.randn(config.pkg_enc_output_dim) * 0.02)
 
-        # Shared trunk: 104 -> 64
-        self.trunk = nn.Sequential(
-            nn.Linear(config.trunk_input_dim, config.trunk_hidden_dim),
-            nn.BatchNorm1d(config.trunk_hidden_dim),
-            nn.GELU(),
-            nn.Dropout(config.trunk_dropout),
-        )
+        # Residual trunk: project then N residual blocks
+        self.trunk_proj = nn.Linear(config.trunk_input_dim, config.trunk_hidden_dim)
+        self.trunk_blocks = nn.ModuleList()
+        for _ in range(config.trunk_layers):
+            self.trunk_blocks.append(nn.Sequential(
+                nn.LayerNorm(config.trunk_hidden_dim),
+                nn.Linear(config.trunk_hidden_dim, config.trunk_hidden_dim),
+                nn.GELU(),
+                nn.Dropout(config.trunk_dropout),
+            ))
 
-        # 3 output heads
-        self.head_raw = nn.Linear(config.head_input_dim, 1)
-        self.head_processing = nn.Linear(config.head_input_dim, 1)
-        self.head_packaging = nn.Linear(config.head_input_dim, 1)
+        # 3 MLP output heads
+        def _make_head():
+            return nn.Sequential(
+                nn.Linear(config.head_input_dim, config.head_hidden_dim),
+                nn.GELU(),
+                nn.Linear(config.head_hidden_dim, 1),
+            )
+        self.head_raw = _make_head()
+        self.head_processing = _make_head()
+        self.head_packaging = _make_head()
 
         # Auxiliary weight prediction head (D1)
-        # Input: cat_emb(8) + mat_pooled(32) = 40 dims
         # Must NOT have access to total_weight (circular dependency)
         self.head_aux_weight = nn.Sequential(
-            nn.Linear(config.embed_dim_category + config.encoder_output_dim, 16),
+            nn.Linear(config.embed_dim_category + config.encoder_output_dim, 32),
             nn.GELU(),
-            nn.Linear(16, 1),
+            nn.Linear(32, 1),
         )
 
     def _apply_tier_masking(self, batch: Dict[str, torch.Tensor],
@@ -269,10 +279,12 @@ class WA1Model(nn.Module):
             torch.cat([cat_emb, mat_pooled], dim=-1)
         ).squeeze(-1)  # [B]
 
-        # -- Trunk + heads --
+        # -- Residual trunk + heads --
         trunk_in = torch.cat(
             [mat_pooled, step_pooled, product_emb, pkg_emb], dim=-1)
-        h = self.trunk(trunk_in)
+        h = torch.nn.functional.gelu(self.trunk_proj(trunk_in))
+        for block in self.trunk_blocks:
+            h = h + block(h)
         preds = torch.cat([self.head_raw(h), self.head_processing(h),
                            self.head_packaging(h)], dim=-1)
 
