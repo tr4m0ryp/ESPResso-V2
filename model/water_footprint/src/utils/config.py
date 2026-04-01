@@ -98,6 +98,15 @@ class WA1Config:
     pin_memory: bool = True
     persistent_workers: bool = True
 
+    # -- Auxiliary weight prediction (D1) --
+    aux_weight_alpha: float = 0.3
+
+    # -- Curriculum learning (D1) --
+    curriculum_warmup_epochs: int = 30
+    curriculum_start_probs: Dict[str, float] = field(default_factory=lambda: {
+        "A": 0.02, "B": 0.03, "C": 0.05, "D": 0.10, "E": 0.30, "F": 0.50,
+    })
+
     # -- Masking tiers (D8, F11) --
     tier_probs: Dict[str, float] = field(default_factory=lambda: {
         "A": 0.35,
