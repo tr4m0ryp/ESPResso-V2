@@ -170,9 +170,10 @@ class ConfidenceGate(nn.Module):
 class GeoAttentionBlock(nn.Module):
     """Cross-attention block with prior fallback for geographic matching.
 
-    Wraps CrossAttentionModule + ConfidenceGate + nn.Embedding prior.
-    Used twice in WA1: once for materials, once for processing steps.
-    Both instances share the same location keys.
+    Stacks n_layers CrossAttentionModules with residual connections and
+    layer normalization, then applies a ConfidenceGate using the final
+    layer's max attention scores. Used for both materials and processing
+    steps, sharing the same location keys.
 
     Args:
         d_model: Model dimension.
@@ -180,12 +181,20 @@ class GeoAttentionBlock(nn.Module):
         n_vocab: Vocabulary size for the prior embedding.
         dropout: Attention dropout rate.
         gate_hidden: Hidden dim for confidence gate MLP.
+        n_layers: Number of stacked cross-attention layers.
     """
 
     def __init__(self, d_model: int, n_heads: int, n_vocab: int,
-                 dropout: float, gate_hidden: int = 8) -> None:
+                 dropout: float, gate_hidden: int = 8,
+                 n_layers: int = 1) -> None:
         super().__init__()
-        self.cross_attn = CrossAttentionModule(d_model, n_heads, dropout)
+        self.cross_attn_layers = nn.ModuleList([
+            CrossAttentionModule(d_model, n_heads, dropout)
+            for _ in range(n_layers)
+        ])
+        self.norms = nn.ModuleList([
+            nn.LayerNorm(d_model) for _ in range(n_layers)
+        ])
         self.gate = ConfidenceGate(d_model, gate_hidden)
         self.prior = nn.Embedding(n_vocab, d_model)
 
@@ -193,7 +202,12 @@ class GeoAttentionBlock(nn.Module):
         self, queries: torch.Tensor, query_ids: torch.Tensor,
         keys: torch.Tensor, key_mask: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Run cross-attention with prior fallback.
+        """Run stacked cross-attention with prior fallback.
+
+        Each layer takes the previous layer's output as queries against
+        the same location keys. Residual connections and layer norms are
+        applied after each layer. The confidence gate uses max attention
+        scores from the final layer only.
 
         Args:
             queries: [B, N, d_model] from encoder.
@@ -205,7 +219,12 @@ class GeoAttentionBlock(nn.Module):
             output: [B, N, d_model] gated combination.
             gate_vals: [B, N, 1] gate activations for monitoring.
         """
-        attended, max_scores = self.cross_attn(queries, keys, keys, key_mask)
+        x = queries
+        max_scores = None
+        for layer, norm in zip(self.cross_attn_layers, self.norms):
+            attended, max_scores = layer(x, keys, keys, key_mask)
+            x = norm(x + attended)
+
         prior_emb = self.prior(query_ids)
-        output, gate_vals = self.gate(attended, max_scores, prior_emb)
+        output, gate_vals = self.gate(x, max_scores, prior_emb)
         return output, gate_vals

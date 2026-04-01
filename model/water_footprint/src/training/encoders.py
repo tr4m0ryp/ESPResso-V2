@@ -14,18 +14,27 @@ from model.water_footprint.src.utils.config import WA1Config
 
 
 class MaterialEncoder(nn.Module):
-    """Encode materials: embedding + log_weight + percentage -> 32-dim per slot.
+    """Encode materials: embedding + log_weight + percentage -> 64-dim per slot.
+
+    Self-attention lets materials in a blend interact (e.g., cotton+polyester
+    behaves differently than either alone).
 
     Input:  material_ids [B, 5], material_weights [B, 5],
             material_pcts [B, 5], material_mask [B, 5]
-    Output: [B, 5, 32]  (padded positions zeroed)
+    Output: [B, 5, 64]  (padded positions zeroed)
     """
 
     def __init__(self, config: WA1Config) -> None:
         super().__init__()
         self.emb = nn.Embedding(config.vocab_materials, config.embed_dim_material)
-        # 16 (emb) + 1 (log_weight) + 1 (pct) = 18
+        # 32 (emb) + 1 (log_weight) + 1 (pct) = 34
         self.mlp = nn.Linear(config.embed_dim_material + 2, config.encoder_output_dim)
+        # Self-attention for material-material interaction
+        self.self_attn = nn.MultiheadAttention(
+            config.encoder_output_dim, config.mat_self_attn_heads,
+            dropout=0.1, batch_first=True,
+        )
+        self.norm = nn.LayerNorm(config.encoder_output_dim)
 
     def forward(
         self,
@@ -34,27 +43,31 @@ class MaterialEncoder(nn.Module):
         material_pcts: torch.Tensor,
         material_mask: torch.Tensor,
     ) -> torch.Tensor:
-        e = self.emb(material_ids)                                    # [B, 5, 16]
+        e = self.emb(material_ids)                                    # [B, 5, 32]
         log_w = torch.log1p(material_weights).unsqueeze(-1)           # [B, 5, 1]
         pcts = material_pcts.unsqueeze(-1)                            # [B, 5, 1]
-        x = torch.cat([e, log_w, pcts], dim=-1)                      # [B, 5, 18]
-        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 5, 32]
+        x = torch.cat([e, log_w, pcts], dim=-1)                      # [B, 5, 34]
+        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 5, 64]
+        # Self-attention with residual + layernorm
+        key_padding_mask = ~material_mask                             # True = ignore
+        attn_out, _ = self.self_attn(x, x, x, key_padding_mask=key_padding_mask)
+        x = self.norm(x + attn_out)
         x = x * material_mask.unsqueeze(-1).float()                  # zero padding
         return x
 
 
 class StepEncoder(nn.Module):
-    """Encode processing steps: embedding + sinusoidal position -> 32-dim per slot.
+    """Encode processing steps: embedding + sinusoidal position -> 64-dim per slot.
 
     Input:  step_ids [B, 27], step_mask [B, 27]
-    Output: [B, 27, 32]  (padded positions zeroed)
+    Output: [B, 27, 64]  (padded positions zeroed)
     """
 
     def __init__(self, config: WA1Config) -> None:
         super().__init__()
         self.emb = nn.Embedding(config.vocab_steps, config.embed_dim_step)
         self.pos_dim = 4
-        # 12 (emb) + 4 (pos) = 16
+        # 24 (emb) + 4 (pos) = 28
         self.mlp = nn.Linear(config.embed_dim_step + self.pos_dim, config.encoder_output_dim)
         # Precompute sinusoidal position encoding for max_steps positions
         pe = self._build_sinusoidal_pe(config.max_steps, self.pos_dim)
@@ -78,26 +91,26 @@ class StepEncoder(nn.Module):
         step_mask: torch.Tensor,
     ) -> torch.Tensor:
         B, S = step_ids.shape
-        e = self.emb(step_ids)                                        # [B, 27, 12]
+        e = self.emb(step_ids)                                        # [B, 27, 24]
         pos = self.pe[:S].unsqueeze(0).expand(B, -1, -1)              # [B, 27, 4]
-        x = torch.cat([e, pos], dim=-1)                               # [B, 27, 16]
-        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 27, 32]
+        x = torch.cat([e, pos], dim=-1)                               # [B, 27, 28]
+        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 27, 64]
         x = x * step_mask.unsqueeze(-1).float()
         return x
 
 
 class LocationEncoder(nn.Module):
-    """Encode processing locations: embedding + sincos coordinates -> 32-dim per slot.
+    """Encode processing locations: embedding + sincos coordinates -> 64-dim per slot.
 
     Input:  location_ids [B, 8], location_coords [B, 8, 4],
             location_mask [B, 8]
-    Output: [B, 8, 32]  (padded positions zeroed)
+    Output: [B, 8, 64]  (padded positions zeroed)
     """
 
     def __init__(self, config: WA1Config) -> None:
         super().__init__()
         self.emb = nn.Embedding(config.vocab_countries, config.embed_dim_country)
-        # 16 (emb) + 4 (sincos coords) = 20
+        # 32 (emb) + 4 (sincos coords) = 36
         self.mlp = nn.Linear(config.embed_dim_country + 4, config.encoder_output_dim)
 
     def forward(
@@ -106,9 +119,9 @@ class LocationEncoder(nn.Module):
         location_coords: torch.Tensor,
         location_mask: torch.Tensor,
     ) -> torch.Tensor:
-        e = self.emb(location_ids)                                    # [B, 8, 16]
-        x = torch.cat([e, location_coords], dim=-1)                  # [B, 8, 20]
-        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 8, 32]
+        e = self.emb(location_ids)                                    # [B, 8, 32]
+        x = torch.cat([e, location_coords], dim=-1)                  # [B, 8, 36]
+        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 8, 64]
         x = x * location_mask.unsqueeze(-1).float()
         return x
 
@@ -118,7 +131,7 @@ class ProductEncoder(nn.Module):
 
     Input:  category_idx [B], subcategory_idx [B], total_weight [B],
             mask_flags [B, 5]
-    Output: [B, 24]
+    Output: [B, product_enc_output_dim]
     """
 
     def __init__(self, config: WA1Config) -> None:
@@ -127,9 +140,10 @@ class ProductEncoder(nn.Module):
         self.subcat_emb = nn.Embedding(
             config.vocab_subcategories, config.embed_dim_subcategory
         )
-        # 8 (cat) + 8 (subcat) + 1 (log_weight) + 5 (mask_flags) = 22
+        # 16 (cat) + 16 (subcat) + 1 (log_weight) + 5 (mask_flags) = 38
         self.mlp = nn.Linear(
-            config.embed_dim_category + config.embed_dim_subcategory + 1 + 5, 24
+            config.embed_dim_category + config.embed_dim_subcategory + 1 + 5,
+            config.product_enc_output_dim,
         )
 
     def forward(
@@ -139,11 +153,11 @@ class ProductEncoder(nn.Module):
         total_weight: torch.Tensor,
         mask_flags: torch.Tensor,
     ) -> torch.Tensor:
-        ce = self.cat_emb(category_idx)                               # [B, 8]
-        se = self.subcat_emb(subcategory_idx)                         # [B, 8]
+        ce = self.cat_emb(category_idx)                               # [B, 16]
+        se = self.subcat_emb(subcategory_idx)                         # [B, 16]
         lw = torch.log1p(total_weight).unsqueeze(-1)                  # [B, 1]
-        x = torch.cat([ce, se, lw, mask_flags], dim=-1)               # [B, 22]
-        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 24]
+        x = torch.cat([ce, se, lw, mask_flags], dim=-1)               # [B, 38]
+        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 48]
         return x
 
 
@@ -151,14 +165,14 @@ class PackagingEncoder(nn.Module):
     """Encode packaging: per-category log masses + category embeddings.
 
     Input:  pkg_masses [B, 3], pkg_category_ids [B, 3]
-    Output: [B, 16]
+    Output: [B, pkg_enc_output_dim]
     """
 
     def __init__(self, config: WA1Config) -> None:
         super().__init__()
         self.emb = nn.Embedding(config.vocab_packaging, config.embed_dim_category)
-        # 3 (log masses) + 3 * 8 (category embeddings) = 27
-        self.mlp = nn.Linear(3 + 3 * config.embed_dim_category, 16)
+        # 3 (log masses) + 3 * 16 (category embeddings) = 51
+        self.mlp = nn.Linear(3 + 3 * config.embed_dim_category, config.pkg_enc_output_dim)
 
     def forward(
         self,
@@ -166,8 +180,8 @@ class PackagingEncoder(nn.Module):
         pkg_category_ids: torch.Tensor,
     ) -> torch.Tensor:
         log_m = torch.log1p(pkg_masses)                               # [B, 3]
-        e = self.emb(pkg_category_ids)                                # [B, 3, 8]
-        e_flat = e.reshape(e.shape[0], -1)                            # [B, 24]
-        x = torch.cat([log_m, e_flat], dim=-1)                        # [B, 27]
-        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 16]
+        e = self.emb(pkg_category_ids)                                # [B, 3, 16]
+        e_flat = e.reshape(e.shape[0], -1)                            # [B, 48]
+        x = torch.cat([log_m, e_flat], dim=-1)                        # [B, 51]
+        x = torch.nn.functional.gelu(self.mlp(x))                    # [B, 32]
         return x
