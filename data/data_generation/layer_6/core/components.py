@@ -1,23 +1,12 @@
 """Component carbon footprint calculators for Layer 6.
 
-Contains the individual calculation methods for each carbon footprint
-component: raw materials, transport, processing, and packaging. These
-are used by CarbonFootprintCalculator as a mixin-style delegation.
-
-Primary functions:
-    calculate_raw_materials -- CF from material emission factors.
-    calculate_transport_from_actuals -- CF from actual per-mode distances.
-    calculate_transport_logit -- CF via multinomial logit model (legacy).
-    calculate_processing -- CF from material-process combinations.
-    calculate_packaging -- CF from packaging category EFs.
-
-Dependencies:
-    databases module for MaterialDatabase, ProcessingDatabase.
-    material_aliases for name resolution.
-    transport_model for mode selection.
+Individual calculation methods for raw materials, transport, processing,
+and packaging. Used by CarbonFootprintCalculator as delegation targets.
 """
 
-from typing import Dict, List, Optional, Tuple
+import json
+import logging
+from typing import Dict, List, Optional, Set, Tuple
 
 from data.data_generation.layer_6.core.databases import (
     MaterialDatabase, ProcessingDatabase
@@ -33,6 +22,8 @@ from data.data_generation.layer_6.core._family_data import (
     FAMILY_APPLICABLE_EXISTING,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def calculate_raw_materials(
     materials: List[str],
@@ -40,19 +31,7 @@ def calculate_raw_materials(
     material_db: MaterialDatabase,
     stats: Dict[str, int]
 ) -> Tuple[float, List[str]]:
-    """Calculate raw materials carbon footprint.
-
-    CF_raw = sum(w_i * EF_i)
-
-    Args:
-        materials: List of material names.
-        weights_kg: List of material weights in kg.
-        material_db: Material emission factor database.
-        stats: Mutable dict with 'matches' and 'misses' counters.
-
-    Returns:
-        Tuple of (footprint in kgCO2e, list of notes/warnings).
-    """
+    """Calculate raw materials CF = sum(w_i * EF_i)."""
     cf_raw = 0.0
     notes = []
 
@@ -84,18 +63,7 @@ def calculate_transport_logit(
     distance_km: float,
     transport_model: TransportModeModel
 ) -> Tuple[float, Dict[str, float], float]:
-    """Calculate transport CF via multinomial logit model (legacy).
-
-    CF_transport = (W/1000) * D * (EF_weighted/1000)
-
-    Args:
-        weight_kg: Total product weight in kg.
-        distance_km: Transport distance in km.
-        transport_model: Transport mode selection model.
-
-    Returns:
-        Tuple of (footprint, mode_probabilities, weighted_ef).
-    """
+    """Calculate transport CF via multinomial logit model (legacy)."""
     result = transport_model.calculate_transport_footprint(
         weight_kg, distance_km
     )
@@ -111,16 +79,7 @@ def calculate_transport_from_actuals(
     mode_distances_km: Dict[str, float],
     emission_factors: Dict[str, float]
 ) -> Tuple[float, Dict[str, float], Dict[str, float], float]:
-    """Calculate transport CF from actual per-mode distances.
-
-    Args:
-        weight_kg: Total product weight in kg.
-        mode_distances_km: Dict mode -> distance km (road, sea, etc.).
-        emission_factors: Dict mode -> EF in g CO2e/tkm.
-
-    Returns:
-        (footprint_kg_co2e, mode_distances_km, mode_fractions, effective_ef)
-    """
+    """Calculate transport CF from actual per-mode distances."""
     weight_tonnes = weight_kg / 1000.0
     footprint = 0.0
 
@@ -148,29 +107,53 @@ def calculate_transport_from_actuals(
 
 
 def get_material_family(name: str) -> Optional[str]:
-    """Get the non-textile family for a material, if any.
-
-    Args:
-        name: Canonical (resolved) material name.
-
-    Returns:
-        Family identifier string, or None for textile materials.
-    """
+    """Get the non-textile family for a material, or None."""
     return MATERIAL_FAMILY_MAP.get(name)
 
 
 def is_step_applicable(family: str, step: str) -> bool:
-    """Check if a textile processing step applies to a family.
-
-    Args:
-        family: Material family identifier (e.g., 'metal').
-        step: Processing step name (e.g., 'spinning').
-
-    Returns:
-        True if the step is applicable to the family.
-    """
+    """Check if a textile processing step applies to a family."""
     applicable = FAMILY_APPLICABLE_EXISTING.get(family, set())
     return step in applicable
+
+
+def extract_material_step_routing(
+    transport_legs_json: str,
+    preprocessing_steps: List[str]
+) -> Dict[str, Set[str]]:
+    """Extract per-material processing steps from transport legs.
+
+    Parses leg objects (material, from_step, to_step), collects step
+    endpoints per material, intersects with preprocessing_steps to
+    filter out logistics nodes. Returns empty dict on malformed input.
+    """
+    try:
+        legs = json.loads(transport_legs_json)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Malformed transport_legs JSON, skipping routing")
+        return {}
+
+    if not isinstance(legs, list):
+        return {}
+
+    valid_steps = {s.lower().strip() for s in preprocessing_steps}
+    routing: Dict[str, Set[str]] = {}
+
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        mat = leg.get("material", "")
+        if not mat:
+            continue
+        steps = routing.setdefault(mat, set())
+        for field in ("from_step", "to_step"):
+            val = leg.get(field, "")
+            if val:
+                normed = val.lower().strip()
+                if normed in valid_steps:
+                    steps.add(normed)
+
+    return routing
 
 
 def calculate_processing(
@@ -179,31 +162,18 @@ def calculate_processing(
     processing_steps: List[str],
     material_db: MaterialDatabase,
     processing_db: ProcessingDatabase,
-    step_ef_lookup: Optional[Dict[str, float]] = None
+    step_ef_lookup: Optional[Dict[str, float]] = None,
+    material_step_routing: Optional[Dict[str, Set[str]]] = None
 ) -> Tuple[float, List[str]]:
-    """Calculate processing carbon footprint with family awareness.
+    """Calculate processing CF with family-aware 3-tier EF lookup.
 
-    Three-tier lookup per material-step pair:
-    1. Direct combination lookup in processing_db (covers all
-       textile combos and new non-textile combos).
-    2. If no combo found and material is non-textile, check
-       family applicability. Inapplicable steps contribute zero.
-    3. If step IS applicable but no combo row, use step-level EF
-       from step_ef_lookup as safety net.
-    The 1.0 default is kept only for textile materials that somehow
-    have a missing combination.
+    Tiers: 1) direct combo in processing_db, 2) family applicability
+    filter for non-textiles, 3) step_ef_lookup fallback. Textile
+    materials without a combo get 1.0 kgCO2e/kg default.
 
-    Args:
-        materials: List of material names.
-        weights_kg: List of material weights in kg.
-        processing_steps: List of processing step names.
-        material_db: Material emission factor database.
-        processing_db: Processing combination database.
-        step_ef_lookup: Optional step_name -> EF mapping for
-            tier-3 fallback.
-
-    Returns:
-        Tuple of (footprint in kgCO2e, list of notes).
+    When material_step_routing is provided, each material iterates
+    only its own steps instead of all preprocessing_steps. Materials
+    missing from the routing dict fall back to all steps.
     """
     cf_processing = 0.0
     notes = []
@@ -217,6 +187,8 @@ def calculate_processing(
     if step_ef_lookup is None:
         step_ef_lookup = {}
 
+    use_routing = bool(material_step_routing)
+
     for material, weight in zip(materials, weights_kg):
         resolved = resolve_material_name(material)
         raw_ef = material_db.get_emission_factor(resolved)
@@ -225,7 +197,12 @@ def calculate_processing(
 
         family = get_material_family(resolved)
 
-        for step in processing_steps:
+        if use_routing and material in material_step_routing:
+            steps_iter = material_step_routing[material]
+        else:
+            steps_iter = processing_steps
+
+        for step in steps_iter:
             # Tier 1: direct combination lookup
             combined_ef = processing_db.get_combined_ef(
                 resolved, step
@@ -259,18 +236,7 @@ def calculate_packaging(
     masses_kg: List[float],
     packaging_ef: Dict[str, float]
 ) -> Tuple[float, List[str]]:
-    """Calculate packaging carbon footprint.
-
-    CF_packaging = sum(m_j * EF_j)
-
-    Args:
-        categories: List of packaging category names.
-        masses_kg: List of packaging masses in kg.
-        packaging_ef: Category-to-EF mapping.
-
-    Returns:
-        Tuple of (footprint in kgCO2e, list of notes).
-    """
+    """Calculate packaging CF = sum(m_j * EF_j)."""
     cf_packaging = 0.0
     notes = []
 

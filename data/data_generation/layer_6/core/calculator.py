@@ -217,12 +217,16 @@ class CarbonFootprintCalculator:
             result.transport_mode_probabilities = mode_probs
             result.weighted_ef_g_co2e_tkm = weighted_ef
 
-        # 3. Processing
+        # 3. Processing (with per-material step routing if available)
+        material_step_routing = record.get(
+            'material_step_routing', None
+        )
         cf_processing, proc_notes = (
             components.calculate_processing(
                 materials, material_weights, preprocessing_steps,
                 self.material_db, self.processing_db,
-                self.step_ef_lookup
+                self.step_ef_lookup,
+                material_step_routing=material_step_routing,
             )
         )
         result.cf_processing_kg_co2e = cf_processing
