@@ -235,7 +235,10 @@ class WA1Model(nn.Module):
 
         # -- Product encoder --
         weight = batch["total_weight"].clone()
-        weight[~avail["total_weight"]] = self.missing_weight
+        # Softplus ensures missing_weight stays non-negative (log1p requires >= 0)
+        weight[~avail["total_weight"]] = torch.nn.functional.softplus(
+            self.missing_weight
+        )
         product_emb = self.product_enc(
             batch["category_idx"], tm["subcat"], weight, tm["flags"])
 
