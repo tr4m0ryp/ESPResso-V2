@@ -104,6 +104,10 @@ Examples:
         help='Enable verbose (DEBUG) logging'
     )
     parser.add_argument(
+        '--workers', '-w', type=int, default=100,
+        help='Number of parallel workers (default: 100)'
+    )
+    parser.add_argument(
         '--no-resume', action='store_true',
         help='Start fresh, ignoring existing checkpoints'
     )
@@ -128,6 +132,7 @@ def main() -> int:
     config = EnrichmentConfig(
         batch_size=args.batch_size,
         checkpoint_interval=args.checkpoint_interval,
+        num_workers=args.workers,
     )
 
     main_logger.info("Configuration:")
@@ -135,8 +140,10 @@ def main() -> int:
     main_logger.info("  Layer 4 input: %s", config.layer4_path)
     main_logger.info("  Output: %s", config.output_path)
     main_logger.info("  Batch size: %d", config.batch_size)
+    main_logger.info("  Workers: %d", config.num_workers)
     main_logger.info("  Checkpoint interval: %d", config.checkpoint_interval)
     main_logger.info("  Model: %s", config.api_model)
+    main_logger.info("  API keys: %d", len(config.api_keys))
 
     # If --no-resume, clear any existing checkpoints before starting
     if args.no_resume:
