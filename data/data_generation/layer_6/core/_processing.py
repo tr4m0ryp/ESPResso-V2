@@ -36,6 +36,9 @@ from data.data_generation.layer_6.core.calculator import (
 from data.data_generation.layer_6.core.databases import (
     CalculationResult
 )
+from data.data_generation.layer_6.core.components import (
+    extract_material_step_routing
+)
 from data.data_generation.layer_6.core.material_aliases import (
     resolve_material_name
 )
@@ -58,10 +61,10 @@ def extract_materials_from_mapping(row: pd.Series) -> List[str]:
     """
     smm_raw = row.get('step_material_mapping', '{}')
     try:
-        if isinstance(smm_raw, dict):
+        if isinstance(smm_raw, dict) and smm_raw:
             return list(smm_raw.keys())
         smm = json.loads(str(smm_raw))
-        if isinstance(smm, dict):
+        if isinstance(smm, dict) and smm:
             return list(smm.keys())
     except (json.JSONDecodeError, TypeError):
         pass
@@ -170,6 +173,27 @@ def process_input_file(
         input_df = pd.read_parquet(input_path)
         logger.info("Read %d records from %s", len(input_df), input_path)
 
+        # Join packaging_masses_kg from Layer 4 (stored there
+        # but absent in the enriched parquet).
+        if 'packaging_masses_kg' not in input_df.columns:
+            try:
+                layer4_df = pd.read_parquet(
+                    config.input_path,
+                    columns=['packaging_masses_kg']
+                )
+                input_df['packaging_masses_kg'] = (
+                    layer4_df['packaging_masses_kg'].values
+                )
+                logger.info(
+                    "Joined packaging_masses_kg from Layer 4 "
+                    "(%d values)", len(layer4_df)
+                )
+            except Exception as e:
+                logger.warning(
+                    "Could not load packaging_masses_kg "
+                    "from Layer 4: %s", e
+                )
+
         output_rows = []
         record_count = 0
 
@@ -205,6 +229,21 @@ def process_input_file(
 
             record = row.to_dict()
             record['materials'] = json.dumps(canonical)
+
+            # Parse packaging masses from Layer 4 JSON string
+            record['packaging_masses_kg'] = json.loads(
+                row.get('packaging_masses_kg', '[]') or '[]'
+            )
+
+            # Extract per-material step routing from transport legs
+            transport_legs_raw = row.get('transport_legs', '[]')
+            preprocessing_steps = json.loads(
+                row.get('preprocessing_steps', '[]') or '[]'
+            )
+            material_step_routing = extract_material_step_routing(
+                transport_legs_raw, preprocessing_steps
+            )
+            record['material_step_routing'] = material_step_routing
 
             result = calculator.calculate_record(record)
 
