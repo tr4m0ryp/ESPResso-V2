@@ -152,6 +152,26 @@ A slow data pipeline means the GPU idles at 0% while the CPU prepares the next b
 - If preprocessing is expensive, do it as a separate step that writes a processed file. Training scripts read the processed file.
 - Use `persistent_workers=True` to avoid respawning worker processes each epoch.
 
+## Notebook Autonomy (Run-All Reliability)
+
+Every manager notebook must pass "Runtime > Run all" on a fresh Colab session without any human intervention. If a cell fails, the user should not have to read a traceback, guess what went wrong, and manually fix it. Fail loudly with an actionable message, or handle it and continue.
+
+**Module structure:** Every directory in the import chain must contain an `__init__.py` file. `model/__init__.py`, `model/<approach>/__init__.py`, and all `src/` subdirectories. Missing init files cause `ModuleNotFoundError` on Colab even when local runs work (namespace package behavior differs).
+
+**API contract:** The notebook must call functions and access attributes exactly as they exist in the source code. When modifying a function signature in `src/`, update the notebook call site. When modifying the notebook, verify the called function's actual signature. Common mismatches: wrong parameter names, missing required arguments, incorrect return type destructuring. These cause immediate crashes that waste a full Colab setup cycle.
+
+**Preflight validation:** Before any expensive operation (dataset load, model build, training), validate prerequisites. Check that required packages are importable, credentials are non-empty, data files are real content (not LFS pointers), and git lfs is available. Fail immediately with a clear message rather than crashing 10 cells later with a cryptic KeyError.
+
+**LFS pointer detection:** After `GIT_LFS_SKIP_SMUDGE=1 git clone`, every LFS-tracked file exists on disk as a ~130-byte pointer stub. `os.path.exists()` returns True. Always check file content or size before treating an LFS-tracked file as ready. A file under 1KB whose first line starts with `version https://git-lfs` is a pointer, not data.
+
+**Idempotent cells:** Every cell must be safe to re-run. Use `if not os.path.exists()` guards for clone/mkdir. Use `os.path.ismount()` before drive mount. Do not assume cells execute exactly once or in order -- Colab users re-run individual cells after fixing problems.
+
+**Dependency management:** Colab pre-installs torch, numpy, pandas, scikit-learn. Do not pin exact versions unless a specific incompatibility is known -- pinning risks downgrading Colab's CUDA-matched torch. Instead, validate that required packages are importable at notebook start.
+
+**Shell command validation:** Jupyter `!command` calls do not raise Python exceptions on failure. `!git lfs pull` can fail silently with a non-zero exit code while the notebook continues. For critical shell operations, use `subprocess.run(..., check=True)` which raises `CalledProcessError` on failure.
+
+**Credential validation:** Check that `GITHUB_USERNAME`, `GITHUB_TOKEN`, and `REPO_URL` are non-empty before attempting `git clone`. An empty token produces a cryptic auth error, not a clear message.
+
 ## Anti-Patterns
 - Never put model logic in notebooks. Notebooks orchestrate only.
 - Never copy datasets into approach directories.

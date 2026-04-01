@@ -133,9 +133,17 @@ class WA1Trainer(CheckpointMixin):
 
     @torch.no_grad()
     def val_epoch(
-        self, tier: Optional[str] = None,
+        self,
+        tier: Optional[str] = None,
+        loader: Optional[DataLoader] = None,
     ) -> Tuple[float, Dict[str, float]]:
-        """Run one validation epoch. Returns (val_loss, metrics_dict)."""
+        """Run one validation epoch. Returns (val_loss, metrics_dict).
+
+        Args:
+            tier: Optional tier label to force during evaluation.
+            loader: Optional DataLoader override (e.g. test set).
+                    Defaults to self.val_loader.
+        """
         self.model.eval()
         all_preds: Dict[str, List] = {
             "raw": [], "processing": [], "packaging": [],
@@ -146,7 +154,7 @@ class WA1Trainer(CheckpointMixin):
         total_loss = 0.0
         n_batches = 0
 
-        for batch in self.val_loader:
+        for batch in (loader or self.val_loader):
             batch = self._to_device(batch)
             targets = self._build_targets(batch)
             out = self.model(batch, tier=tier)
