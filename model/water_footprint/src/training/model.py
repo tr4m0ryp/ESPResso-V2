@@ -217,12 +217,23 @@ class WA1Model(nn.Module):
             loc_mask_adj = loc_mask.clone()
             loc_mask_adj[~avail["locations"]] = False
 
+            # Save original encoder output before geo attention overwrites
+            mat_emb_orig = mat_emb.clone()
+            step_emb_orig = step_emb.clone()
+
             mat_emb, mg = self.material_geo(
                 mat_emb, batch["material_ids"], loc_emb, loc_mask_adj)
             step_emb, sg = self.step_geo(
                 step_emb, batch["step_ids"], loc_emb, loc_mask_adj)
             gate_mat = mg.squeeze(-1).mean(dim=-1)
             gate_step = sg.squeeze(-1).mean(dim=-1)
+
+            # Restore original encoder embeddings for samples without locations
+            # (geo priors are untrained; raw encoder output is far more useful)
+            no_loc = ~avail["locations"]
+            if no_loc.any():
+                mat_emb[no_loc] = mat_emb_orig[no_loc]
+                step_emb[no_loc] = step_emb_orig[no_loc]
 
         # -- Mean pool sequences --
         mat_pooled = _masked_mean_pool(mat_emb, batch["material_mask"])
