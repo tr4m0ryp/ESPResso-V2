@@ -114,4 +114,28 @@ data/data_generation/layer_6/analysis/output/
 
 # Compiled C binaries
 data/data_generation/layer_6/layer6_calculate
+data/data_generation/layer_7/bin/
 data/data_calculation/layer6_calculate
+data/data_calculation/*/build/
+
+# External databases (too large for git, download separately)
+data/extern/*.zolca
+data/extern/AWARE_v1_2_setup_openlca_2024-10-30.json
+
+# Non-final model datasets (redundant with final/)
+data/datasets/model/*.csv
+data/datasets/model/*.parquet
+!data/datasets/model/final/
+
+# Model training artifacts (checkpoints, experiment logs, weights)
+model/*/checkpoints/
+model/*/runs.jsonl
+model/data/*.csv
+
+# -----------------------------------------------
+# Claude Code scaffolding
+# -----------------------------------------------
+.claude/
+notes/
+tasks/
+research/

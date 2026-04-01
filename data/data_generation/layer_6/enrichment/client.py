@@ -1,9 +1,7 @@
-"""LLM client wrapper for Layer 6 transport distance extraction.
+"""LLM client for Layer 6 transport distance extraction.
 
-Thin wrapper around the shared FunctionClient.  Posts directly to the
-chat completions endpoint (bypassing FunctionClient._call_model which
-hardcodes its own system message), applies retry logic with exponential
-backoff, and returns a parsed list of transport distance dicts.
+Calls an OpenAI-compatible /chat/completions endpoint (Gemini, NVIDIA,
+etc.) with multi-key round-robin, retry logic, and JSON parsing.
 
 Primary class:
     EnrichmentClient -- Handles LLM calls for batch transport distance
@@ -14,50 +12,47 @@ import json
 import logging
 import random
 import re
+import threading
 import time
 from typing import Any, Dict, List
 
+import requests
+
 from data.data_generation.layer_6.enrichment.config import EnrichmentConfig
-from data.data_generation.shared.api_client import FunctionClient
 
 logger = logging.getLogger(__name__)
 
 _REQUIRED_KEYS = {
-    "id",
-    "road_km",
-    "sea_km",
-    "rail_km",
-    "air_km",
-    "inland_waterway_km",
+    "id", "road_km", "sea_km", "rail_km", "air_km", "inland_waterway_km",
 }
 
 
 class EnrichmentClient:
-    """Thin wrapper around FunctionClient for transport distance extraction.
+    """Client for transport distance extraction via OpenAI-compatible API.
 
-    Handles:
-    - Direct HTTP POST to the chat completions endpoint
-    - Retry logic with exponential backoff and jitter (up to max_retries)
-    - JSON parsing with markdown fence stripping and thinking tag removal
-    - Validation that each element in the returned list has the required keys
+    Supports multiple API keys with round-robin distribution.
+    Rate control is handled by the orchestrator's wave dispatcher.
     """
 
     def __init__(self, config: EnrichmentConfig):
-        """Initialize client with enrichment configuration.
-
-        Args:
-            config: EnrichmentConfig instance with API settings.
-        """
         self.config = config
-        self.client = FunctionClient(
-            api_key=config.api_key,
-            model_id=config.api_model,
-            base_url=config.api_base_url,
-            layer_name="layer_6_enrichment",
-        )
+        self.base_url = config.api_base_url.rstrip("/")
+        self._keys = config.api_keys
+        if not self._keys:
+            raise ValueError("No API keys configured")
+        self._counter = 0
+        self._counter_lock = threading.Lock()
         logger.info(
-            "Initialized EnrichmentClient with model: %s", config.api_model
+            "EnrichmentClient: model=%s keys=%d",
+            config.api_model, len(self._keys),
         )
+
+    def _next_key(self) -> str:
+        """Round-robin select the next API key."""
+        with self._counter_lock:
+            key = self._keys[self._counter % len(self._keys)]
+            self._counter += 1
+        return key
 
     # ------------------------------------------------------------------
     # Public API
@@ -70,24 +65,11 @@ class EnrichmentClient:
     ) -> List[Dict[str, Any]]:
         """Call the LLM and return parsed transport distance records.
 
-        Retries up to config.max_retries times with exponential backoff
-        and jitter.  Raises the last exception if all attempts fail.
-
-        Args:
-            system_prompt: Static system prompt for the LLM.
-            user_prompt: Per-batch user prompt containing the transport
-                         leg data to be summarised into distances.
-
-        Returns:
-            List of dicts, each containing the keys:
-            id, road_km, sea_km, rail_km, air_km, inland_waterway_km.
-
-        Raises:
-            Exception: Re-raises the last error after max_retries
-                       exhausted (orchestrator handles fail-open).
+        Retries up to config.max_retries times with exponential backoff.
+        Each attempt round-robins to the next API key.
         """
-        url = f"{self.client.base_url}/chat/completions"
-        payload: Dict[str, Any] = {
+        url = f"{self.base_url}/chat/completions"
+        payload = {
             "model": self.config.api_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -95,107 +77,87 @@ class EnrichmentClient:
             ],
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
+            "reasoning_effort": "none",
         }
 
         last_exc: Exception = RuntimeError("No attempts made")
 
         for attempt in range(self.config.max_retries):
+            key = self._next_key()
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}",
+            }
             try:
-                response = self.client._make_api_call(url, payload)
-                raw_text = response.content or response.reasoning or ""
+                raw_text = self._call_api(url, payload, headers)
                 result = self._parse_json_response(raw_text)
                 if result:
                     return result
-                # Empty parse result -- treat as retriable failure
-                raise ValueError(
-                    "JSON parse returned empty list from non-empty response"
-                )
+                raise ValueError("JSON parse returned empty list")
             except Exception as exc:
                 last_exc = exc
                 if attempt < self.config.max_retries - 1:
-                    delay = min(2 ** attempt + random.random(), 60.0)
+                    is_rate_limit = "429" in str(exc)
+                    if is_rate_limit:
+                        delay = 30.0 + random.random() * 15.0
+                    else:
+                        delay = min(2 ** attempt + random.random(), 60.0)
                     logger.warning(
-                        "Attempt %d/%d failed: %s. Retrying in %.2fs",
-                        attempt + 1,
-                        self.config.max_retries,
-                        exc,
-                        delay,
+                        "Attempt %d/%d failed: %s. Retrying in %.1fs",
+                        attempt + 1, self.config.max_retries, exc, delay,
                     )
                     time.sleep(delay)
                 else:
                     logger.error(
                         "All %d attempts exhausted. Last error: %s",
-                        self.config.max_retries,
-                        exc,
+                        self.config.max_retries, exc,
                     )
 
         raise last_exc
 
-    def test_connection(self) -> bool:
-        """Verify the API is reachable with a minimal prompt.
+    def _call_api(self, url: str, payload: Dict, headers: Dict) -> str:
+        """POST to /chat/completions and extract response text."""
+        resp = requests.post(
+            url, json=payload, headers=headers, timeout=300
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            raise ValueError("API returned no choices")
+        return choices[0].get("message", {}).get("content", "")
 
-        Returns:
-            True if the API returns a parseable non-empty response.
-        """
-        system_prompt = (
+    def test_connection(self) -> bool:
+        """Verify the API is reachable with a minimal prompt."""
+        sys_p = (
             "You are a transport analyst. "
             "Output ONLY valid JSON array with keys: "
             "id, road_km, sea_km, rail_km, air_km, inland_waterway_km."
         )
-        user_prompt = (
+        usr_p = (
             '[{"id": "pp-000001", "transport_legs": '
             '[{"transport_modes": ["road"], "distance_km": 100}]}]'
         )
         try:
-            result = self.extract_transport_distances(
-                system_prompt, user_prompt
-            )
-            return bool(result)
+            return bool(self.extract_transport_distances(sys_p, usr_p))
         except Exception as exc:
             logger.error("Connection test failed: %s", exc)
             return False
 
-    def get_model_info(self) -> Dict[str, Any]:
-        """Return metadata about the configured model."""
-        return {
-            "model": self.config.api_model,
-            "base_url": self.config.api_base_url,
-            "api_type": "chat_completions",
-            "max_retries": self.config.max_retries,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-        }
-
     # ------------------------------------------------------------------
-    # Internal helpers
+    # JSON parsing
     # ------------------------------------------------------------------
 
     def _parse_json_response(self, raw_text: str) -> List[Dict[str, Any]]:
-        """Parse LLM response text into a validated list of distance dicts.
-
-        Applies in order:
-        1. Strip thinking tags via FunctionClient helper.
-        2. Strip markdown code fences.
-        3. Extract outermost JSON array (first [ to last ]).
-        4. Fall back to parsing the stripped text as-is.
-
-        Invalid elements (missing required keys or wrong type) are logged
-        and dropped rather than causing a total failure.
-
-        Args:
-            raw_text: Raw text content from the model response.
-
-        Returns:
-            List of valid distance dicts (may be empty on complete failure).
-        """
+        """Parse LLM response into validated list of distance dicts."""
         if not raw_text:
             logger.warning("Empty response text received")
             return []
 
-        strip_fn = getattr(self.client, "_strip_thinking_tags", None)
-        text = strip_fn(raw_text) if callable(strip_fn) else raw_text
+        text = re.sub(
+            r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>", "", raw_text
+        ).strip()
 
-        # 1. Markdown fence: ```json ... ``` or ``` ... ```
         fence_match = re.search(
             r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", text
         )
@@ -204,7 +166,6 @@ class EnrichmentClient:
             if parsed is not None:
                 return parsed
 
-        # 2. Outermost array brackets
         start = text.find("[")
         end = text.rfind("]")
         if start != -1 and end != -1 and end > start:
@@ -212,51 +173,28 @@ class EnrichmentClient:
             if parsed is not None:
                 return parsed
 
-        # 3. Last resort: parse as-is
         parsed = self._try_parse_array(text.strip())
         if parsed is not None:
             return parsed
 
-        logger.warning(
-            "Failed to parse JSON array response. Preview: %.200s", raw_text
-        )
+        logger.warning("Failed to parse JSON array. Preview: %.200s", raw_text)
         return []
 
-    def _try_parse_array(
-        self, text: str
-    ) -> List[Dict[str, Any]] | None:
-        """Attempt to parse text as a JSON array of distance records.
-
-        Args:
-            text: Candidate JSON string.
-
-        Returns:
-            List of valid elements (elements with missing keys are dropped),
-            or None if the text is not a valid JSON array at all.
-        """
+    @staticmethod
+    def _try_parse_array(text: str) -> List[Dict[str, Any]] | None:
+        """Attempt to parse text as a JSON array of distance records."""
         try:
             data = json.loads(text)
         except (json.JSONDecodeError, ValueError):
             return None
-
         if not isinstance(data, list):
             return None
 
         valid: List[Dict[str, Any]] = []
         for i, element in enumerate(data):
             if not isinstance(element, dict):
-                logger.debug(
-                    "Response element %d is not a dict, skipping", i
-                )
                 continue
-            missing = _REQUIRED_KEYS - element.keys()
-            if missing:
-                logger.debug(
-                    "Response element %d missing keys %s, skipping",
-                    i,
-                    missing,
-                )
+            if _REQUIRED_KEYS - element.keys():
                 continue
             valid.append(element)
-
         return valid

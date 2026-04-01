@@ -11,6 +11,7 @@ survive interruptions.
 import csv
 import logging
 import shutil
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -36,6 +37,7 @@ class CheckpointManager:
         self.config = config
         self.checkpoint_dir = Path(config.checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._batch_counter = 0
         self._records_since_checkpoint = 0
         self._pending_rows: List[Dict[str, Any]] = []
@@ -97,46 +99,49 @@ class CheckpointManager:
             results: List of dicts with keys id, road_km, etc.
             is_valid_flags: Parallel list of validation pass/fail bools.
         """
-        for result, valid in zip(results, is_valid_flags):
-            row = {
-                'record_id': result.get('id', ''),
-                'road_km': result.get('road_km', 0.0),
-                'sea_km': result.get('sea_km', 0.0),
-                'rail_km': result.get('rail_km', 0.0),
-                'air_km': result.get('air_km', 0.0),
-                'inland_waterway_km': result.get('inland_waterway_km', 0.0),
-                'is_valid': valid,
-            }
-            self._pending_rows.append(row)
-            self._records_since_checkpoint += 1
+        with self._lock:
+            for result, valid in zip(results, is_valid_flags):
+                row = {
+                    'record_id': result.get('id', ''),
+                    'road_km': result.get('road_km', 0.0),
+                    'sea_km': result.get('sea_km', 0.0),
+                    'rail_km': result.get('rail_km', 0.0),
+                    'air_km': result.get('air_km', 0.0),
+                    'inland_waterway_km': result.get('inland_waterway_km', 0.0),
+                    'is_valid': valid,
+                }
+                self._pending_rows.append(row)
+                self._records_since_checkpoint += 1
 
     def should_checkpoint(self) -> bool:
         """Return True if enough records have accumulated to flush."""
-        return self._records_since_checkpoint >= self.config.checkpoint_interval
+        with self._lock:
+            return self._records_since_checkpoint >= self.config.checkpoint_interval
 
     def flush(self) -> Optional[str]:
-        """Write pending rows to a checkpoint CSV.
+        """Write pending rows to a checkpoint CSV (thread-safe).
 
         Returns:
             Path to the written checkpoint file, or None if nothing to write.
         """
-        if not self._pending_rows:
-            return None
+        with self._lock:
+            if not self._pending_rows:
+                return None
 
-        self._batch_counter += 1
-        filename = f"enrichment_batch_{self._batch_counter:04d}.csv"
-        fpath = self.checkpoint_dir / filename
+            self._batch_counter += 1
+            filename = f"enrichment_batch_{self._batch_counter:04d}.csv"
+            fpath = self.checkpoint_dir / filename
+            rows_to_write = list(self._pending_rows)
+            self._pending_rows = []
+            self._records_since_checkpoint = 0
 
         try:
             with open(fpath, 'w', newline='', encoding='utf-8') as fh:
                 writer = csv.DictWriter(fh, fieldnames=CHECKPOINT_COLUMNS)
                 writer.writeheader()
-                writer.writerows(self._pending_rows)
+                writer.writerows(rows_to_write)
 
-            count = len(self._pending_rows)
-            logger.info("Checkpoint written: %s (%d rows)", filename, count)
-            self._pending_rows = []
-            self._records_since_checkpoint = 0
+            logger.info("Checkpoint written: %s (%d rows)", filename, len(rows_to_write))
             return str(fpath)
 
         except Exception as exc:

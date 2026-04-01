@@ -1,13 +1,14 @@
 """Enrichment orchestrator for Layer 6 transport distance extraction.
 
-Coordinates the full LLM enrichment pipeline: loads data, batches
-records, calls the LLM client, validates results, checkpoints progress,
-retries failures, and writes the final enriched dataset.
+Coordinates the LLM enrichment pipeline: load, batch, call, validate,
+checkpoint, retry, and write the final enriched dataset.
 """
 
 import json
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -41,6 +42,7 @@ class EnrichmentOrchestrator:
         self.collector = FailedRecordCollector()
         self.checkpoint_mgr = CheckpointManager(config)
         self._system_prompt = get_system_prompt()
+        self._stats_lock = threading.Lock()
         self._stats: Dict[str, int] = {
             'total_input': 0, 'already_done': 0,
             'batches_processed': 0, 'passed_validation': 0,
@@ -82,35 +84,48 @@ class EnrichmentOrchestrator:
         self._write_summary(output_path, duration)
         return output_path
 
-    # -- Batch processing ----------------------------------------------
+    def _inc_stat(self, key: str, count: int = 1) -> None:
+        with self._stats_lock:
+            self._stats[key] += count
 
     def _process_batches(self, df: pd.DataFrame) -> None:
-        """Process all records in batches through LLM extraction."""
+        """Process all batches with flat parallel executor."""
         records = df.to_dict('records')
         bs = self.config.batch_size
         batches = [records[i:i + bs] for i in range(0, len(records), bs)]
+        num_workers = self.config.num_workers
         logger.info(
-            "Processing %d records in %d batches (size %d)",
-            len(records), len(batches), bs,
+            "Processing %d records in %d batches (size %d, %d workers)",
+            len(records), len(batches), bs, num_workers,
         )
-
-        for idx, batch in enumerate(batches, 1):
-            try:
-                self._process_single_batch(batch)
-            except Exception as exc:
-                logger.error("Error in batch %d/%d: %s", idx, len(batches), exc)
-                self.checkpoint_mgr.force_flush()
-                raise
-
-            self._stats['batches_processed'] += 1
-            if self.checkpoint_mgr.should_checkpoint():
-                self.checkpoint_mgr.flush()
-            if idx % 50 == 0:
-                logger.info(
-                    "Progress: batch %d/%d, %d passed, %d failed, %d errors",
-                    idx, len(batches), self._stats['passed_validation'],
-                    self._stats['failed_validation'], self._stats['api_errors'],
-                )
+        completed = 0
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(self._process_single_batch, batch): idx
+                for idx, batch in enumerate(batches, 1)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.error("Batch %d/%d failed: %s",
+                                 idx, len(batches), exc)
+                    self._inc_stat('api_errors')
+                completed += 1
+                self._inc_stat('batches_processed')
+                if self.checkpoint_mgr.should_checkpoint():
+                    self.checkpoint_mgr.flush()
+                if completed % 100 == 0:
+                    logger.info(
+                        "Progress: %d/%d batches, %d passed, "
+                        "%d failed, %d errors",
+                        completed, len(batches),
+                        self._stats['passed_validation'],
+                        self._stats['failed_validation'],
+                        self._stats['api_errors'],
+                    )
+        self.checkpoint_mgr.force_flush()
 
     def _process_single_batch(self, batch: List[Dict]) -> None:
         """Run LLM extraction + validation on one batch."""
@@ -154,7 +169,7 @@ class EnrichmentOrchestrator:
             if extracted is None:
                 if not is_retry:
                     self.collector.add_failure(rec, None)
-                self._stats[fail_key] += 1
+                self._inc_stat(fail_key)
                 continue
 
             total_km = float(rec.get('total_distance_km', 0.0))
@@ -165,29 +180,23 @@ class EnrichmentOrchestrator:
             valid_flags.append(vr.is_valid)
 
             if vr.is_valid:
-                self._stats[pass_key] += 1
+                self._inc_stat(pass_key)
             else:
                 if not is_retry:
                     self.collector.add_failure(rec, vr)
-                self._stats[fail_key] += 1
+                self._inc_stat(fail_key)
 
         return valid_results, valid_flags
-
-    # -- Retry pass ----------------------------------------------------
 
     def _retry_failures(self) -> None:
         """Retry all failed records once. Records that fail twice are skipped."""
         retry_batch = self.collector.get_retry_batch()
         if not retry_batch:
-            logger.info("No failed records to retry")
             return
-
         self._stats['retried'] = len(retry_batch)
         logger.info("Retrying %d failed records", len(retry_batch))
-
         bs = self.config.batch_size
         batches = [retry_batch[i:i + bs] for i in range(0, len(retry_batch), bs)]
-
         for batch in batches:
             prompt = build_batch_prompt(batch)
             try:
@@ -205,12 +214,8 @@ class EnrichmentOrchestrator:
             if results:
                 self.checkpoint_mgr.add_results(results, flags)
 
-        logger.info(
-            "Retry complete: %d passed, %d skipped",
-            self._stats['retry_passed'], self._stats['skipped'],
-        )
-
-    # -- Merge and write output ----------------------------------------
+        logger.info("Retry: %d passed, %d skipped",
+                    self._stats['retry_passed'], self._stats['skipped'])
 
     def _merge_and_write(self) -> str:
         """Merge checkpoint data into the full dataset and write parquet."""
@@ -221,10 +226,9 @@ class EnrichmentOrchestrator:
 
         if enriched.empty:
             logger.warning("No enriched data -- writing base dataset")
-            output_path = self.config.output_path
-            full_df.to_parquet(output_path, compression='gzip', index=False)
-            return output_path
-
+            full_df.to_parquet(
+                self.config.output_path, compression='gzip', index=False)
+            return self.config.output_path
         merged = full_df.merge(enriched, on='record_id', how='left')
         for col in MODE_COLUMNS:
             merged[col] = merged[col].fillna(0.0)
@@ -237,8 +241,6 @@ class EnrichmentOrchestrator:
             output_path, len(merged), len(merged.columns),
         )
         return output_path
-
-    # -- Summary -------------------------------------------------------
 
     def _write_summary(self, output_path: str, duration: float) -> str:
         """Write a JSON summary of the enrichment run."""

@@ -10,6 +10,7 @@ Public API:
 """
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, List
 
@@ -184,6 +185,7 @@ class FailedRecordCollector:
     """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._total_validated: int = 0
         self._passed: int = 0
         self.failed: List[Dict] = []
@@ -195,8 +197,9 @@ class FailedRecordCollector:
 
     def record_pass(self) -> None:
         """Increment pass counter without storing any extra data."""
-        self._total_validated += 1
-        self._passed += 1
+        with self._lock:
+            self._total_validated += 1
+            self._passed += 1
 
     def add_failure(self, record: Dict, result: ValidationResult) -> None:
         """Store a failed record and its validation result for retry.
@@ -205,15 +208,10 @@ class FailedRecordCollector:
             record: The original record dict as passed to the extractor.
             result: The ValidationResult returned by validate_extraction().
         """
-        self._total_validated += 1
-        self.failed.append(record)
-        self.results.append(result)
-
-        logger.debug(
-            'failure collected for record %s (discrepancy=%.4f%%)',
-            result.record_id,
-            result.discrepancy_pct * 100,
-        )
+        with self._lock:
+            self._total_validated += 1
+            self.failed.append(record)
+            self.results.append(result)
 
     # ------------------------------------------------------------------
     # Retrieval

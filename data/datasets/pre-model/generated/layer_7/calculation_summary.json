@@ -1,0 +1,48 @@
+{
+  "metadata": {
+    "generated_at": "2026-03-31T13:44:40.811205",
+    "pipeline_version": "v1.0",
+    "layer": 7,
+    "description": "Water footprint calculation statistics"
+  },
+  "processing_summary": {
+    "total_records_processed": 50480,
+    "records_with_warnings": 0,
+    "material_match_rate": 1.0
+  },
+  "water_footprint_statistics": {
+    "wf_raw_m3_world_eq": {
+      "mean": 4.247450813891968,
+      "std": 6.839762514198872,
+      "min": 0.000372764,
+      "max": 86.41762280500001,
+      "median": 1.3756841168000002
+    },
+    "wf_processing_m3_world_eq": {
+      "mean": 1.294679508935673,
+      "std": 1.5880609842803552,
+      "min": 0.00110392,
+      "max": 25.965386144999997,
+      "median": 0.7974830341
+    },
+    "wf_packaging_m3_world_eq": {
+      "mean": 0.0019515400678143157,
+      "std": 0.0011382246734739515,
+      "min": 0.00045762200000000003,
+      "max": 0.006989136000000001,
+      "median": 0.0016502126666666664
+    },
+    "wf_total_m3_world_eq": {
+      "mean": 5.544081862895456,
+      "std": 7.715520363609825,
+      "min": 0.0062970085866666655,
+      "max": 112.38460369333333,
+      "median": 2.4943750965833336
+    }
+  },
+  "output_file": "data/datasets/pre-model/generated/layer_7/water_footprint_dataset.csv",
+  "input_files": {
+    "layer5": "data/datasets/pre-model/generated/layer_5/layer_5_validated_dataset.csv",
+    "layer4": "data/datasets/pre-model/generated/layer_4/layer_4_complete_dataset.parquet"
+  }
+}
