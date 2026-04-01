@@ -102,9 +102,9 @@ class WA1Config:
     aux_weight_alpha: float = 0.3
 
     # -- Curriculum learning (D1) --
-    curriculum_warmup_epochs: int = 30
+    curriculum_warmup_epochs: int = 20
     curriculum_start_probs: Dict[str, float] = field(default_factory=lambda: {
-        "A": 0.02, "B": 0.03, "C": 0.05, "D": 0.10, "E": 0.30, "F": 0.50,
+        "A": 0.10, "B": 0.10, "C": 0.10, "D": 0.15, "E": 0.20, "F": 0.35,
     })
 
     # -- Masking tiers (D8, F11) --
