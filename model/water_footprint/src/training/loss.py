@@ -70,3 +70,25 @@ class UWSOLoss(nn.Module):
             for i, name in enumerate(self.HEAD_NAMES)
         }
         return total_loss, head_losses, weight_dict
+
+    def auxiliary_weight_loss(
+        self,
+        weight_pred: torch.Tensor,
+        weight_true: torch.Tensor,
+        weight_avail: torch.Tensor,
+    ) -> torch.Tensor:
+        """MSE loss for auxiliary weight prediction, only on samples where weight is known.
+
+        Args:
+            weight_pred: [B] predicted weight from auxiliary head.
+            weight_true: [B] actual total_weight_kg.
+            weight_avail: [B] boolean mask (True = weight was available/known).
+
+        Returns:
+            Scalar loss (zero if no samples have weight available).
+        """
+        if not weight_avail.any():
+            return torch.tensor(0.0, device=weight_pred.device)
+        pred = weight_pred[weight_avail]
+        true = torch.log1p(weight_true[weight_avail])
+        return F.mse_loss(pred, true)

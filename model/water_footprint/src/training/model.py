@@ -101,6 +101,15 @@ class WA1Model(nn.Module):
         self.head_processing = nn.Linear(config.head_input_dim, 1)
         self.head_packaging = nn.Linear(config.head_input_dim, 1)
 
+        # Auxiliary weight prediction head (D1)
+        # Input: cat_emb(8) + mat_pooled(32) = 40 dims
+        # Must NOT have access to total_weight (circular dependency)
+        self.head_aux_weight = nn.Sequential(
+            nn.Linear(config.embed_dim_category + config.encoder_output_dim, 16),
+            nn.GELU(),
+            nn.Linear(16, 1),
+        )
+
     def _apply_tier_masking(self, batch: Dict[str, torch.Tensor],
                             B: int, device: torch.device,
                             tier: Optional[str]
@@ -226,7 +235,7 @@ class WA1Model(nn.Module):
 
         # -- Product encoder --
         weight = batch["total_weight"].clone()
-        weight[~avail["total_weight"]] = 0.0
+        weight[~avail["total_weight"]] = self.missing_weight
         product_emb = self.product_enc(
             batch["category_idx"], tm["subcat"], weight, tm["flags"])
 
@@ -239,6 +248,13 @@ class WA1Model(nn.Module):
         pkg_emb = self._encode_with_fallback(
             pkg_emb, avail["packaging"], self.missing_packaging)
 
+        # -- Auxiliary weight prediction (D1) --
+        # Uses ONLY category embedding + mean-pooled materials (no total_weight)
+        cat_emb = self.product_enc.cat_emb(batch["category_idx"])  # [B, 8]
+        aux_weight_pred = self.head_aux_weight(
+            torch.cat([cat_emb, mat_pooled], dim=-1)
+        ).squeeze(-1)  # [B]
+
         # -- Trunk + heads --
         trunk_in = torch.cat(
             [mat_pooled, step_pooled, product_emb, pkg_emb], dim=-1)
@@ -246,5 +262,8 @@ class WA1Model(nn.Module):
         preds = torch.cat([self.head_raw(h), self.head_processing(h),
                            self.head_packaging(h)], dim=-1)
 
-        return {"preds": preds,
-                "gate_values": {"material": gate_mat, "step": gate_step}}
+        return {
+            "preds": preds,
+            "gate_values": {"material": gate_mat, "step": gate_step},
+            "aux_weight_pred": aux_weight_pred,
+        }

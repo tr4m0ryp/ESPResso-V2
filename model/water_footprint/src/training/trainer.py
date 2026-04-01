@@ -1,9 +1,5 @@
-"""WA1Trainer -- training loop with early stopping and viability check.
-
-AdamW + linear warmup (5 epochs) + cosine decay. Early stopping with
-patience=15. Checkpoint/logging/smoke_test in checkpoint.py.
-Reference: notes/water-model-implementation.md (D6, D8).
-"""
+"""WA1Trainer -- training loop with curriculum learning, auxiliary weight
+loss, early stopping, and viability check. See D6, D8."""
 
 import logging
 import math
@@ -20,16 +16,13 @@ from model.water_footprint.src.training.loss import UWSOLoss
 from model.water_footprint.src.preprocessing.transforms import Log1pZScoreTransform
 from model.water_footprint.src.evaluation.metrics import compute_metrics
 from model.water_footprint.src.training.checkpoint import CheckpointMixin, smoke_test
+from model.water_footprint.src.training.curriculum import curriculum_tier_probs
 
 logger = logging.getLogger(__name__)
 
 # Re-export smoke_test at module level for convenience
 __all__ = ["WA1Trainer", "get_lr_scheduler", "smoke_test"]
 
-
-# ---------------------------------------------------------------------------
-# LR scheduler: linear warmup + cosine decay
-# ---------------------------------------------------------------------------
 
 def get_lr_scheduler(
     optimizer: torch.optim.Optimizer,
@@ -44,10 +37,6 @@ def get_lr_scheduler(
         return 0.5 * (1.0 + math.cos(math.pi * progress))
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-
-# ---------------------------------------------------------------------------
-# Trainer
-# ---------------------------------------------------------------------------
 
 class WA1Trainer(CheckpointMixin):
     """Training orchestrator for the WA1 water footprint model."""
@@ -105,8 +94,11 @@ class WA1Trainer(CheckpointMixin):
 
     def train_epoch(self, epoch: int) -> Tuple[float, Dict[str, float]]:
         """Run one training epoch. Returns (epoch_loss, per_head_losses)."""
+        original_probs = self.config.tier_probs
+        self.config.tier_probs = curriculum_tier_probs(self.config, epoch)
         self.model.train()
         total_loss = 0.0
+        total_aux = 0.0
         head_sums: Dict[str, float] = {
             "raw": 0.0, "processing": 0.0, "packaging": 0.0,
         }
@@ -116,20 +108,29 @@ class WA1Trainer(CheckpointMixin):
             batch = self._to_device(batch)
             targets = self._build_targets(batch)
             out = self.model(batch, tier=None)
-            loss, head_losses, _ = self.loss_fn(out["preds"], targets)
+            loss_main, head_losses, _ = self.loss_fn(out["preds"], targets)
+
+            aux_loss = self.loss_fn.auxiliary_weight_loss(
+                out["aux_weight_pred"], batch["total_weight"],
+                (batch["total_weight"] > 0),
+            )
+            loss = loss_main + self.config.aux_weight_alpha * aux_loss
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
             total_loss += loss.item()
+            total_aux += aux_loss.item()
             for h in head_sums:
                 head_sums[h] += head_losses[h].item()
             n_batches += 1
 
-        avg = total_loss / max(n_batches, 1)
-        avg_heads = {h: v / max(n_batches, 1) for h, v in head_sums.items()}
-        return avg, avg_heads
+        self.config.tier_probs = original_probs
+        n = max(n_batches, 1)
+        avg_heads = {h: v / n for h, v in head_sums.items()}
+        avg_heads["aux_weight"] = total_aux / n
+        return total_loss / n, avg_heads
 
     @torch.no_grad()
     def val_epoch(
@@ -137,13 +138,7 @@ class WA1Trainer(CheckpointMixin):
         tier: Optional[str] = None,
         loader: Optional[DataLoader] = None,
     ) -> Tuple[float, Dict[str, float]]:
-        """Run one validation epoch. Returns (val_loss, metrics_dict).
-
-        Args:
-            tier: Optional tier label to force during evaluation.
-            loader: Optional DataLoader override (e.g. test set).
-                    Defaults to self.val_loader.
-        """
+        """Run one validation epoch. Returns (val_loss, metrics_dict)."""
         self.model.eval()
         all_preds: Dict[str, List] = {
             "raw": [], "processing": [], "packaging": [],
@@ -215,8 +210,10 @@ class WA1Trainer(CheckpointMixin):
                 epochs_no_improve += 1
 
             logger.info(
-                "Epoch %03d  train=%.4f  val=%.4f  lr=%.2e  pat=%d/%d%s",
+                "Epoch %03d  train=%.4f  val=%.4f  aux=%.4f"
+                "  lr=%.2e  pat=%d/%d%s",
                 epoch, train_loss, val_loss,
+                head_losses.get("aux_weight", 0.0),
                 entry["lr"], epochs_no_improve, patience,
                 "  *" if improved else "",
             )

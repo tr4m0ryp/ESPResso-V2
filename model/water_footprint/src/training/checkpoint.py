@@ -182,6 +182,30 @@ def smoke_test(
     )
     logger.info("Output shape: %s", out["preds"].shape)
 
+    # 4b. Verify aux_weight_pred in model output
+    assert "aux_weight_pred" in out, "Model output missing aux_weight_pred"
+    expected_B = sample_batch["category_idx"].shape[0]
+    assert out["aux_weight_pred"].shape == (expected_B,), (
+        f"aux_weight_pred shape mismatch: {out['aux_weight_pred'].shape}"
+    )
+    logger.info("aux_weight_pred shape: %s", out["aux_weight_pred"].shape)
+
+    # 4c. Verify auxiliary loss computes
+    aux_loss = loss_fn.auxiliary_weight_loss(
+        out["aux_weight_pred"],
+        sample_batch["total_weight"].to(device),
+        (sample_batch["total_weight"] > 0).to(device),
+    )
+    assert torch.isfinite(aux_loss), f"Aux weight loss not finite: {aux_loss}"
+    logger.info("Aux weight loss: %.4f", aux_loss.item())
+
+    # 4d. Verify curriculum start probs sum to 1.0
+    start_sum = sum(config.curriculum_start_probs.values())
+    assert abs(start_sum - 1.0) < 0.01, (
+        f"Curriculum start probs sum to {start_sum}"
+    )
+    logger.info("Curriculum start probs sum: %.4f", start_sum)
+
     # 5. Gate values differ across tiers
     with torch.no_grad():
         out_a = model(sample_batch, tier="A")
@@ -208,4 +232,5 @@ def smoke_test(
         "grad_ratio": grad_ratio,
         "gate_a": gate_a,
         "gate_f": gate_f,
+        "aux_loss": aux_loss.item(),
     }
