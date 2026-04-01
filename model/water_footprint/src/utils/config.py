@@ -45,34 +45,39 @@ class WA1Config:
     vocab_packaging: int = 4
 
     # -- Embedding dimensions (D8) --
-    embed_dim_material: int = 16
-    embed_dim_step: int = 12
-    embed_dim_category: int = 8
-    embed_dim_subcategory: int = 8
-    embed_dim_country: int = 16
+    embed_dim_material: int = 32
+    embed_dim_step: int = 24
+    embed_dim_category: int = 16
+    embed_dim_subcategory: int = 16
+    embed_dim_country: int = 32
 
     # -- Encoder output dimension (D8) --
-    encoder_output_dim: int = 32
+    encoder_output_dim: int = 64
+    product_enc_output_dim: int = 48
+    pkg_enc_output_dim: int = 32
+    mat_self_attn_heads: int = 2
 
     # -- Cross-attention (D8) --
-    cross_attn_layers: int = 1
-    cross_attn_heads: int = 2
+    cross_attn_layers: int = 2
+    cross_attn_heads: int = 4
     cross_attn_d_k: int = 16
-    cross_attn_d_model: int = 32
+    cross_attn_d_model: int = 64
     cross_attn_dropout: float = 0.15
 
     # -- Confidence gate (D8) --
-    gate_hidden_dim: int = 8
-    # Input: encoder_output_dim (32), output: 1 (sigmoid)
+    gate_hidden_dim: int = 16
+    # Input: encoder_output_dim (64), output: 1 (sigmoid)
 
     # -- Shared trunk (D8) --
-    trunk_input_dim: int = 104
-    trunk_hidden_dim: int = 64
+    trunk_input_dim: int = 208
+    trunk_hidden_dim: int = 128
+    trunk_layers: int = 2
     trunk_dropout: float = 0.20
 
     # -- Output heads (D8) --
     num_heads: int = 3
-    head_input_dim: int = 64
+    head_input_dim: int = 128
+    head_hidden_dim: int = 64
     head_output_dim: int = 1
     # Heads: raw_materials, processing, packaging
 
@@ -87,7 +92,7 @@ class WA1Config:
 
     # -- Training (D8) --
     optimizer: str = "adamw"
-    learning_rate: float = 1e-3
+    learning_rate: float = 5e-4
     weight_decay: float = 0.01
     batch_size: int = 256
     max_epochs: int = 100
