@@ -142,7 +142,7 @@ def main() -> int:
     main_logger.info("  Batch size: %d", config.batch_size)
     main_logger.info("  Workers: %d", config.num_workers)
     main_logger.info("  Checkpoint interval: %d", config.checkpoint_interval)
-    main_logger.info("  Model: %s", config.api_model)
+    main_logger.info("  Models: %s", config.api_models)
     main_logger.info("  API keys: %d", len(config.api_keys))
 
     # If --no-resume, clear any existing checkpoints before starting
