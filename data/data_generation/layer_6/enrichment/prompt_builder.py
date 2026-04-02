@@ -16,74 +16,57 @@ _KEEP_LEG_FIELDS = {"transport_modes", "distance_km", "reasoning"}
 
 # System prompt stored as a module-level constant
 SYSTEM_PROMPT = """\
-You are a transport logistics data extraction engine. Your task is to \
-read textile supply chain transport leg data and extract the total \
-distance traveled by each transport mode.
+You are a transport logistics data extraction engine.
 
 TASK
-For each record, you receive a JSON array of transport legs. Each leg has:
-- transport_modes: ordered list of modes used (e.g., ["road", "sea", "road"])
-- distance_km: the AUTHORITATIVE total distance for that leg
-- reasoning: narrative describing the journey with approximate per-segment distances
+For each record you receive:
+- total_distance_km: the authoritative total distance
+- pre_computed_km: distances already assigned to single-mode legs (exact)
+- multi_mode_legs: ONLY the legs with multiple transport modes
 
-EXTRACTION RULES -- FOLLOW EXACTLY
+Your job: extract per-mode distances from the multi_mode_legs, then ADD \
+them to the pre_computed values for the final output.
 
-Step 1: For each leg, determine per-segment mode distances.
-  - SINGLE-MODE legs (one entry in transport_modes): assign the full \
-distance_km to that mode.
-  - MULTI-MODE legs (multiple entries): read the reasoning to find the \
-approximate distance for each segment.
+EXTRACTION RULES
 
-Step 2: SCALE multi-mode segments to match distance_km.
-  The reasoning text uses approximate values ("approximately 20900 km") that \
-do NOT sum exactly to distance_km. You MUST scale them:
-  - Sum the raw segment distances from reasoning.
-  - Compute scale_factor = distance_km / sum_of_raw_segments.
-  - Multiply each segment distance by scale_factor.
-  This ensures every leg's segments sum EXACTLY to its distance_km.
+Step 1: For each multi-mode leg, read the reasoning to find approximate \
+per-segment distances.
 
-Step 3: Sum all scaled distances per mode across ALL legs in the record.
+Step 2: SCALE segments to match the leg's distance_km:
+  - Sum raw segment distances from reasoning.
+  - scale_factor = distance_km / sum_of_raw_segments.
+  - Multiply each segment by scale_factor.
 
-Step 4: VERIFY your per-mode totals sum to total_distance_km (given in the \
-record header). If your sum differs by more than 0.5%, re-check your work \
-and correct before outputting.
+Step 3: Sum scaled distances per mode across all multi-mode legs.
 
-The five valid modes are: road, sea, rail, air, inland_waterway. \
-Return 0.0 for any mode not used. Round all distances to 1 decimal place.
+Step 4: ADD multi-mode totals to pre_computed_km values.
+
+Step 5: VERIFY your final totals sum to total_distance_km. If off by \
+more than 0.5%, re-check and correct.
 
 WORKED EXAMPLE
-Input: total_distance_km: 5050.0, legs:
-  Leg A: modes=["road"], distance_km=100.0
-    -> road: 100.0 (single-mode, full distance)
-  Leg B: modes=["road","sea","road"], distance_km=4950.0
-    reasoning: "Trucked 430 km to port. Shipped 4200 km. Final 340 km by road."
-    Raw segments: road=430, sea=4200, road=340. Sum=4970.
-    Scale factor: 4950.0 / 4970 = 0.99598
-    Scaled: road=428.3, sea=4183.1, road=338.6. Sum=4950.0. Correct.
+Input: total_distance_km: 5050.0
+pre_computed_km: {"road_km": 100.0, "sea_km": 0.0, ...}
+multi_mode_legs: [{"transport_modes": ["road","sea","road"], \
+"distance_km": 4950.0, "reasoning": "Trucked 430 km. Shipped 4200 km. \
+Final 340 km by road."}]
 
-Per-mode totals: road = 100 + 428.3 + 338.6 = 866.9, sea = 4183.1
-Verify: 866.9 + 4183.1 = 5050.0 == total_distance_km. OK.
-
-Output: {"id":"example","road_km":866.9,"sea_km":4183.1,"rail_km":0.0,\
-"air_km":0.0,"inland_waterway_km":0.0}
+Raw: road=430, sea=4200, road=340. Sum=4970.
+Scale: 4950/4970=0.99598. Scaled: road=766.9, sea=4183.1.
+Add pre_computed: road=100+766.9=866.9, sea=0+4183.1=4183.1.
+Verify: 866.9+4183.1=5050.0. OK.
 
 OUTPUT FORMAT
-Return a JSON array with one object per record, in the order received. \
-Each object:
-{
-  "id": "<the record id provided>",
-  "road_km": <float>,
-  "sea_km": <float>,
-  "rail_km": <float>,
-  "air_km": <float>,
-  "inland_waterway_km": <float>
-}
+JSON array, one object per record, in order:
+{"id":"<id>","road_km":<float>,"sea_km":<float>,"rail_km":<float>,\
+"air_km":<float>,"inland_waterway_km":<float>}
 
-CRITICAL RULES
-- The distance_km field is AUTHORITATIVE. Reasoning distances are approximate.
-- Always scale multi-mode segments so they sum to the leg's distance_km.
-- If reasoning lacks per-segment distances, split distance_km equally among modes.
-- Output ONLY the JSON array. No explanation, no markdown fences, no preamble.\
+RULES
+- distance_km is AUTHORITATIVE. Reasoning distances are approximate.
+- Always scale so segments sum to the leg's distance_km.
+- If reasoning lacks per-segment distances, split equally among modes.
+- If no multi_mode_legs, output pre_computed_km values directly.
+- Output ONLY the JSON array. No explanation, no fences, no preamble.\
 """
 
 
@@ -101,22 +84,47 @@ def strip_leg_fields(leg: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in leg.items() if k in _KEEP_LEG_FIELDS}
 
 
+def _split_legs(legs: List[Dict[str, Any]]):
+    """Split legs into single-mode (pre-computed) and multi-mode (needs LLM).
+
+    Returns (pre_computed dict of mode->km, multi_mode_legs list,
+             multi_mode_remaining_km).
+    """
+    pre = {"road_km": 0.0, "sea_km": 0.0, "rail_km": 0.0,
+           "air_km": 0.0, "inland_waterway_km": 0.0}
+    mode_map = {"road": "road_km", "sea": "sea_km", "rail": "rail_km",
+                "air": "air_km", "inland_waterway": "inland_waterway_km"}
+    multi = []
+    pre_total = 0.0
+
+    for leg in legs:
+        modes = leg.get("transport_modes", [])
+        km = float(leg.get("distance_km", 0.0))
+        if len(modes) == 1 and modes[0] in mode_map:
+            pre[mode_map[modes[0]]] += round(km, 1)
+            pre_total += km
+        else:
+            multi.append(leg)
+
+    return pre, multi, pre_total
+
+
 def build_batch_prompt(records: List[Dict[str, Any]]) -> str:
-    """Build a multi-record user prompt for batch transport distance extraction.
+    """Build a token-optimized batch prompt.
 
-    Args:
-        records: List of record dicts, each containing at minimum:
-            - record_id (str): unique identifier for the record
-            - total_distance_km (float): total journey distance
-            - transport_legs (str or list): JSON string or parsed list of legs
-
-    Returns:
-        Formatted prompt string ready to send to the LLM.
+    Single-mode legs are pre-computed locally. Only multi-mode legs
+    are sent to the LLM with their reasoning text.
     """
     n = len(records)
     lines: List[str] = []
     lines.append(
         "Extract transport mode distances for the following %d records." % n
+    )
+    lines.append(
+        "NOTE: Single-mode legs have been pre-computed. "
+        "pre_computed_km shows those totals. Only multi-mode legs "
+        "are listed below. Add your multi-mode extraction to the "
+        "pre-computed values for the final output."
     )
 
     for i, record in enumerate(records, start=1):
@@ -124,13 +132,24 @@ def build_batch_prompt(records: List[Dict[str, Any]]) -> str:
         total_km = record.get("total_distance_km", 0.0)
         legs_raw = record.get("transport_legs", [])
         legs = _parse_legs(legs_raw, record_id)
-        stripped_legs = [strip_leg_fields(leg) for leg in legs]
+
+        pre, multi, pre_total = _split_legs(legs)
+        multi_stripped = [strip_leg_fields(l) for l in multi]
+        remaining_km = float(total_km) - pre_total
 
         lines.append("")
         lines.append("--- Record %d (id: %s) ---" % (i, record_id))
         lines.append("total_distance_km: %s" % _format_km(total_km))
-        lines.append("transport_legs:")
-        lines.append(_format_legs_json(stripped_legs))
+        lines.append("pre_computed_km: %s" % json.dumps(
+            {k: round(v, 1) for k, v in pre.items()}, ensure_ascii=False
+        ))
+        if multi_stripped:
+            lines.append("remaining_km_for_multi_mode: %s" % _format_km(
+                remaining_km))
+            lines.append("multi_mode_legs:")
+            lines.append(_format_legs_json(multi_stripped))
+        else:
+            lines.append("(all legs are single-mode, no LLM extraction needed)")
 
     return "\n".join(lines)
 

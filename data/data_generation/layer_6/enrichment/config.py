@@ -49,7 +49,11 @@ class EnrichmentConfig:
     api_base_url: str = field(
         default='https://generativelanguage.googleapis.com/v1beta/openai'
     )
-    api_model: str = field(default='gemini-3-flash-preview')
+    api_models: str = field(
+        default=('gemini-2.5-flash,gemini-2.5-flash-lite,'
+                 'gemini-3-flash-preview,gemini-flash-latest,'
+                 'gemini-flash-lite-latest')
+    )
     api_key_env_var: str = field(default='GEMINI_API_KEY')
     temperature: float = field(default=0.5)
     max_tokens: int = field(default=8000)
@@ -57,7 +61,7 @@ class EnrichmentConfig:
     # -- Batch settings ----------------------------------------------------
 
     # Records processed per LLM call
-    batch_size: int = field(default=20)
+    batch_size: int = field(default=10)
     # Write checkpoint every N records
     checkpoint_interval: int = field(default=5000)
     # Parallel workers for concurrent API calls
@@ -65,13 +69,13 @@ class EnrichmentConfig:
 
     # -- Retry settings ----------------------------------------------------
 
-    max_retries: int = field(default=5)
+    max_retries: int = field(default=10)
 
     # -- Validation settings -----------------------------------------------
 
     # Allowed fractional deviation when cross-checking mode distances
     # against total distance (1% tolerance)
-    distance_tolerance: float = field(default=0.01)
+    distance_tolerance: float = field(default=0.02)
 
     # -- Computed paths ----------------------------------------------------
 

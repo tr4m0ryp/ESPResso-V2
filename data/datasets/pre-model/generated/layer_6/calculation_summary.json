@@ -1,0 +1,52 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-01T21:08:48.333495",
+    "pipeline_version": "v2.0",
+    "layer": 6,
+    "description": "Carbon footprint calculation statistics"
+  },
+  "processing_summary": {
+    "total_records_processed": 50480,
+    "records_with_warnings": 0,
+    "material_match_rate": 1.0
+  },
+  "carbon_footprint_statistics": {
+    "cf_raw_kg_co2e": {
+      "mean": 4.347513341184627,
+      "std": 5.152962218300341,
+      "min": 0.0729,
+      "max": 47.67195,
+      "median": 2.53
+    },
+    "cf_transport_kg_co2e": {
+      "mean": 0.26286417949333457,
+      "std": 0.24477877390702305,
+      "min": 2.6639999999999996e-05,
+      "max": 8.464900112000002,
+      "median": 0.20930636749999998
+    },
+    "cf_processing_kg_co2e": {
+      "mean": 3.715562789372029,
+      "std": 2.8906451861887397,
+      "min": 0.03300000000000006,
+      "max": 27.881249999999994,
+      "median": 3.0250000000000004
+    },
+    "cf_packaging_kg_co2e": {
+      "mean": 0.24605095780507133,
+      "std": 0.10300440926783505,
+      "min": 0.0661,
+      "max": 0.749,
+      "median": 0.2219
+    },
+    "cf_total_kg_co2e": {
+      "mean": 8.743431093212164,
+      "std": 7.592235509636814,
+      "min": 0.300098943,
+      "max": 69.3054278835,
+      "median": 6.78979722594
+    }
+  },
+  "output_file": "data/datasets/pre-model/generated/layer_6/training_dataset.parquet",
+  "input_file": "data/datasets/pre-model/generated/layer_4/layer_4_complete_dataset.parquet"
+}
