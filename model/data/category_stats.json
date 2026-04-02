@@ -1,0 +1,496 @@
+{
+  "Ankle Boots": {
+    "mean_tokens": 14.0762,
+    "std_tokens": 3.5084,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Bags & Cases": {
+    "mean_tokens": 13.2567,
+    "std_tokens": 3.7928,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Ballerinas": {
+    "mean_tokens": 13.1575,
+    "std_tokens": 3.337,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Beach Shoes": {
+    "mean_tokens": 12.5291,
+    "std_tokens": 3.2172,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Belts": {
+    "mean_tokens": 12.0309,
+    "std_tokens": 3.7457,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Blue-light Glasses": {
+    "mean_tokens": 8.5,
+    "std_tokens": 1.446,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Boots": {
+    "mean_tokens": 12.8484,
+    "std_tokens": 3.138,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Bridal Shoes": {
+    "mean_tokens": 13.1233,
+    "std_tokens": 2.9675,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Business Shoes": {
+    "mean_tokens": 15.0833,
+    "std_tokens": 2.811,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Coats": {
+    "mean_tokens": 17.1995,
+    "std_tokens": 5.3106,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Dresses": {
+    "mean_tokens": 15.3025,
+    "std_tokens": 4.517,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Flat Shoes": {
+    "mean_tokens": 13.4143,
+    "std_tokens": 3.3252,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Gloves": {
+    "mean_tokens": 12.5586,
+    "std_tokens": 3.954,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Hats & Caps": {
+    "mean_tokens": 15.2794,
+    "std_tokens": 4.848,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "High Heels": {
+    "mean_tokens": 12.3159,
+    "std_tokens": 2.8473,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Jackets": {
+    "mean_tokens": 15.4788,
+    "std_tokens": 4.3171,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Jeans": {
+    "mean_tokens": 16.3092,
+    "std_tokens": 4.6922,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Jewellery": {
+    "mean_tokens": 7.95,
+    "std_tokens": 3.4115,
+    "expected_stages": [
+      "finishing",
+      "wet_proc"
+    ]
+  },
+  "Knitwear & Cardigans": {
+    "mean_tokens": 13.278,
+    "std_tokens": 4.2592,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Lace-up Shoes": {
+    "mean_tokens": 12.1667,
+    "std_tokens": 2.0817,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Loafers": {
+    "mean_tokens": 13.0156,
+    "std_tokens": 2.9894,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Loungewear & Sleepwear": {
+    "mean_tokens": 14.4161,
+    "std_tokens": 4.9195,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Miscellaneous": {
+    "mean_tokens": 13.9531,
+    "std_tokens": 3.9157,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Mules": {
+    "mean_tokens": 8.3333,
+    "std_tokens": 1.0328,
+    "expected_stages": [
+      "finishing",
+      "wet_proc"
+    ]
+  },
+  "Open Shoes": {
+    "mean_tokens": 13.6102,
+    "std_tokens": 3.9654,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Outdoor Shoes": {
+    "mean_tokens": 15.2,
+    "std_tokens": 3.6531,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Pumps": {
+    "mean_tokens": 13.0501,
+    "std_tokens": 3.0809,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Sandals": {
+    "mean_tokens": 11.623,
+    "std_tokens": 2.806,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Scarves": {
+    "mean_tokens": 11.6971,
+    "std_tokens": 4.2554,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Shirts & Blouses": {
+    "mean_tokens": 14.5744,
+    "std_tokens": 4.7954,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Shorts": {
+    "mean_tokens": 16.8908,
+    "std_tokens": 4.8063,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Skirts": {
+    "mean_tokens": 14.6898,
+    "std_tokens": 4.0538,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Slippers": {
+    "mean_tokens": 12.7342,
+    "std_tokens": 2.0488,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Sneakers": {
+    "mean_tokens": 14.6159,
+    "std_tokens": 3.5154,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Socks & Tights": {
+    "mean_tokens": 13.2807,
+    "std_tokens": 4.3858,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Sports Shoes": {
+    "mean_tokens": 13.5538,
+    "std_tokens": 3.1376,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Suits & Tailoring": {
+    "mean_tokens": 16.2736,
+    "std_tokens": 5.0561,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Sunglasses": {
+    "mean_tokens": 7.0,
+    "std_tokens": 2.3979,
+    "expected_stages": [
+      "finishing"
+    ]
+  },
+  "Sweatshirts & Hoodies": {
+    "mean_tokens": 14.9332,
+    "std_tokens": 4.6386,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Swimwear": {
+    "mean_tokens": 13.2108,
+    "std_tokens": 4.1754,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "T-shirts & Polos": {
+    "mean_tokens": 14.1661,
+    "std_tokens": 4.9121,
+    "expected_stages": [
+      "fabric",
+      "fiber_proc",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Tracksuits & Joggers": {
+    "mean_tokens": 16.1452,
+    "std_tokens": 4.54,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Trousers": {
+    "mean_tokens": 15.4665,
+    "std_tokens": 4.8908,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "raw_prep",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Umbrellas": {
+    "mean_tokens": 11.3182,
+    "std_tokens": 2.5968,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Underwear": {
+    "mean_tokens": 14.7402,
+    "std_tokens": 4.4956,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Wallets & Card Holders": {
+    "mean_tokens": 10.4577,
+    "std_tokens": 3.1107,
+    "expected_stages": [
+      "fabric",
+      "finishing",
+      "wet_proc",
+      "yarn"
+    ]
+  },
+  "Watches": {
+    "mean_tokens": 10.045,
+    "std_tokens": 3.0201,
+    "expected_stages": [
+      "finishing",
+      "wet_proc"
+    ]
+  }
+}

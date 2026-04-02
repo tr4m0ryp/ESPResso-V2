@@ -254,7 +254,7 @@ class EnrichmentOrchestrator:
                 'checkpoint_interval': self.config.checkpoint_interval,
                 'max_retries': self.config.max_retries,
                 'distance_tolerance': self.config.distance_tolerance,
-                'model': self.config.api_model,
+                'models': self.config.api_models,
             },
         }
         summary_path = str(

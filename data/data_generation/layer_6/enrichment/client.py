@@ -40,19 +40,25 @@ class EnrichmentClient:
         self._keys = config.api_keys
         if not self._keys:
             raise ValueError("No API keys configured")
+        self._models = [
+            m.strip() for m in config.api_models.split(',') if m.strip()
+        ]
+        if not self._models:
+            raise ValueError("No API models configured")
         self._counter = 0
         self._counter_lock = threading.Lock()
         logger.info(
-            "EnrichmentClient: model=%s keys=%d",
-            config.api_model, len(self._keys),
+            "EnrichmentClient: models=%s keys=%d",
+            self._models, len(self._keys),
         )
 
-    def _next_key(self) -> str:
-        """Round-robin select the next API key."""
+    def _next_key_and_model(self):
+        """Round-robin select next API key and model."""
         with self._counter_lock:
             key = self._keys[self._counter % len(self._keys)]
+            model = self._models[self._counter % len(self._models)]
             self._counter += 1
-        return key
+        return key, model
 
     # ------------------------------------------------------------------
     # Public API
@@ -69,21 +75,20 @@ class EnrichmentClient:
         Each attempt round-robins to the next API key.
         """
         url = f"{self.base_url}/chat/completions"
-        payload = {
-            "model": self.config.api_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-            "reasoning_effort": "none",
-        }
-
         last_exc: Exception = RuntimeError("No attempts made")
 
         for attempt in range(self.config.max_retries):
-            key = self._next_key()
+            key, model = self._next_key_and_model()
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "reasoning_effort": "none",
+            }
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {key}",
@@ -99,7 +104,7 @@ class EnrichmentClient:
                 if attempt < self.config.max_retries - 1:
                     is_rate_limit = "429" in str(exc)
                     if is_rate_limit:
-                        delay = 30.0 + random.random() * 15.0
+                        delay = 10.0 + random.random() * 10.0
                     else:
                         delay = min(2 ** attempt + random.random(), 60.0)
                     logger.warning(

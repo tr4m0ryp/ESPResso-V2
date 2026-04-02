@@ -117,6 +117,13 @@ def derive_transport_strategy(df: pd.DataFrame) -> pd.DataFrame:
         match = _STRATEGY_RE.search(scenario_id)
         return match.group(1) if match else 'unknown'
 
+    if 'transport_scenario_id' not in df.columns:
+        logger.warning(
+            "transport_scenario_id column not found; "
+            "skipping transport strategy derivation"
+        )
+        return df
+
     df['transport_strategy'] = df['transport_scenario_id'].apply(
         _extract_strategy
     )
