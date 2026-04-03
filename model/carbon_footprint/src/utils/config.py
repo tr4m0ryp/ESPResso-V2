@@ -89,7 +89,7 @@ class CarbonConfig:
     optimizer: str = "adamw"
     lr: float = 5e-4
     weight_decay: float = 0.01
-    batch_size: int = 256
+    batch_size: int = 1024
     max_epochs: int = 100
     patience: int = 15
     warmup_epochs: int = 5
