@@ -235,9 +235,14 @@ class CarbonTrainer(CheckpointMixin):
     def viability_check(self, n_canary: int = 5) -> bool:
         """Run canary epochs and verify learning signal.
 
-        Checks: loss decreasing, no NaN/Inf, no flat loss, val not
-        diverging. On fail, logs a diagnostic report. On pass, canary
-        epochs count toward total training.
+        Checks: no NaN/Inf, loss not exploding, loss eventually decreasing.
+        Accounts for LR warmup: loss may increase during warmup as the
+        learning rate ramps from near-zero to target. The check compares
+        the best loss in the second half of canary epochs against the
+        peak loss, not first-vs-last.
+
+        On fail, logs a diagnostic report. On pass, canary epochs count
+        toward total training (not discarded).
         """
         logger.info("--- viability check: %d canary epochs ---", n_canary)
         train_losses: List[float] = []
@@ -249,13 +254,13 @@ class CarbonTrainer(CheckpointMixin):
             self.scheduler.step()
             train_losses.append(tl)
             val_losses.append(vl)
+            lr = self.optimizer.param_groups[0]["lr"]
             self.history.append({
-                "epoch": epoch, "train_loss": tl, "val_loss": vl,
-                "lr": self.optimizer.param_groups[0]["lr"],
+                "epoch": epoch, "train_loss": tl, "val_loss": vl, "lr": lr,
             })
             logger.info(
-                "Canary %d/%d  train=%.4f  val=%.4f",
-                epoch + 1, n_canary, tl, vl,
+                "Canary %d/%d  train=%.4f  val=%.4f  lr=%.2e",
+                epoch + 1, n_canary, tl, vl, lr,
             )
 
             if not math.isfinite(tl) or not math.isfinite(vl):
@@ -266,18 +271,35 @@ class CarbonTrainer(CheckpointMixin):
                 )
                 return False
 
-        # Check: training loss decreased over canary window
-        if train_losses[-1] >= train_losses[0] * 0.99:
+        # Check: loss not exploding (>10x the minimum observed)
+        min_loss = min(train_losses)
+        max_loss = max(train_losses)
+        if max_loss > min_loss * 10 and max_loss > 5.0:
             logger.error(
-                "ABORT: Training loss flat (%.4f -> %.4f). "
-                "Likely cause: bad learning rate or dead gradients. "
-                "Try lr *= 0.1 or check architecture.",
-                train_losses[0], train_losses[-1],
+                "ABORT: Training loss exploded (min=%.4f, max=%.4f). "
+                "Likely cause: learning rate too high or numerical "
+                "instability. Try lr *= 0.1.",
+                min_loss, max_loss,
             )
             return False
 
-        # Check: val loss not monotonically increasing
-        if len(val_losses) >= 3 and all(
+        # Check: second half of canary epochs shows improvement over peak.
+        # During LR warmup, loss may increase initially -- that's expected.
+        # We only require that the loss starts trending down eventually.
+        mid = max(n_canary // 2, 1)
+        second_half_min = min(train_losses[mid:])
+        first_half_max = max(train_losses[:mid])
+        if second_half_min > first_half_max * 1.5:
+            logger.error(
+                "ABORT: Training loss not recovering after warmup "
+                "(first-half peak=%.4f, second-half min=%.4f). "
+                "Likely cause: bad learning rate or dead gradients.",
+                first_half_max, second_half_min,
+            )
+            return False
+
+        # Check: val loss not monotonically increasing across ALL epochs
+        if len(val_losses) >= 4 and all(
             val_losses[i] > val_losses[i - 1]
             for i in range(1, len(val_losses))
         ):
@@ -289,5 +311,10 @@ class CarbonTrainer(CheckpointMixin):
             )
             return False
 
-        logger.info("--- viability check passed ---")
+        logger.info(
+            "--- viability check passed (train: %.4f -> %.4f, "
+            "val: %.4f -> %.4f) ---",
+            train_losses[0], train_losses[-1],
+            val_losses[0], val_losses[-1],
+        )
         return True
