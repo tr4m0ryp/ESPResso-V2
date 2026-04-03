@@ -106,7 +106,7 @@ def plot_training_curves(
     # Top-right: per-head losses
     ax = axes[0, 1]
     for head in HEAD_NAMES:
-        vals = [h["head_losses"].get(head, 0.0) for h in history]
+        vals = [h.get("head_losses", {}).get(head, 0.0) for h in history]
         ax.plot(epochs, vals, label=HEAD_LABELS[head])
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Head Loss")
@@ -123,7 +123,7 @@ def plot_training_curves(
 
     # Bottom-right: auxiliary weight loss
     ax = axes[1, 1]
-    aux = [h["head_losses"].get("aux_weight", 0.0) for h in history]
+    aux = [h.get("head_losses", {}).get("aux_weight", 0.0) for h in history]
     ax.plot(epochs, aux, color="tab:red")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Aux Weight Loss")

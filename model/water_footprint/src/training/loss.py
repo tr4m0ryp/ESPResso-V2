@@ -58,7 +58,8 @@ class UWSOLoss(nn.Module):
         weights = F.softmax(-self.log_vars, dim=0)
 
         # Combined: sum(w_i * L_i) + sum(log_var_i) as regularization
-        total_loss = (weights * losses).sum() + self.log_vars.sum()
+        # Clamp total to prevent negative loss from log_var regularization
+        total_loss = ((weights * losses).sum() + self.log_vars.sum()).clamp(min=0.0)
 
         # Build output dicts
         head_losses = {
