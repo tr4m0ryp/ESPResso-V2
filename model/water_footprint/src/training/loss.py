@@ -55,11 +55,14 @@ class UWSOLoss(nn.Module):
         losses = torch.stack([loss_raw, loss_proc, loss_pkg])
 
         # UW-SO weighting: w_i = softmax(-log_var_i)
-        weights = F.softmax(-self.log_vars, dim=0)
+        # Clamp log_vars to [-4, 4] to prevent the regularizer sum from
+        # drifting to large negative values and making total_loss negative.
+        # Range [-4, 4] still allows ~50x weight variation between heads.
+        clamped = self.log_vars.clamp(-4.0, 4.0)
+        weights = F.softmax(-clamped, dim=0)
 
         # Combined: sum(w_i * L_i) + sum(log_var_i) as regularization
-        # Clamp total to prevent negative loss from log_var regularization
-        total_loss = ((weights * losses).sum() + self.log_vars.sum()).clamp(min=0.0)
+        total_loss = (weights * losses).sum() + clamped.sum()
 
         # Build output dicts
         head_losses = {
