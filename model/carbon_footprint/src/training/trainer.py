@@ -34,9 +34,6 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
     logger.info(msg)
 
-# Re-export smoke_test and get_lr_scheduler at module level for convenience
-__all__ = ["CarbonTrainer", "get_lr_scheduler", "smoke_test"]
-
 TARGET_KEYS = [f"cf_{h}" for h in HEAD_NAMES]
 
 
@@ -178,6 +175,9 @@ class CarbonTrainer(CheckpointMixin):
                 "val_loss": val_loss,
                 "lr_attn": lr_attn,
                 "lr_mlp": lr_mlp,
+                "main_loss": loss_comps.get("main_loss", 0.0),
+                "aux_loss": loss_comps.get("aux_loss", 0.0),
+                "structural_loss": loss_comps.get("structural_loss", 0.0),
                 "distill_coeff": loss_comps.get("distill_coeff", 0.0),
                 "attn_entropy": loss_comps.get("attn_entropy", 0.0),
                 "L_entropy": loss_comps.get("L_entropy", 0.0),
