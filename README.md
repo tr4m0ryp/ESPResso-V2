@@ -601,5 +601,16 @@ SMOKE_TEST=1 python -m model.water_footprint.src.training.trainer
 - **Agribalyse 3.2** -- Agricultural LCA database for natural fiber water footprints
 - **Claude Sonnet 4.6 / 4.5 (Anthropic)** -- Primary LLM for data generation (Layers 1-4) and validation (Layer 5)
 - **Gemini 3.1 Pro (Google)** -- Fallback LLM used during Layer 6 enrichment when the UvA API gateway was unavailable
+- **[UvA AI Chat](https://ai.uva.nl)** -- University of Amsterdam AI platform providing LLM API access
 - **PyTorch** -- Deep learning framework for both prediction models
 - **University of Amsterdam** -- Academic institution and infrastructure provider
+
+### Key References
+
+- Lambert, Sener & Savarese -- [Deep Learning under Privileged Information Using Heteroscedastic Dropout](https://arxiv.org/abs/1805.11614) (2018). Foundation for the LUPI distillation approach used in the carbon transport proxy.
+- Momeni & Tatwawadi -- [Understanding LUPI](https://web.stanford.edu/~kedart/files/lupi.pdf) (Stanford). Overview of Learning Using Privileged Information frameworks.
+- Wu et al. -- [Deep Multimodal Learning with Missing Modality: A Survey](https://arxiv.org/html/2409.07825v3) (2024). Survey informing the tier-based masking and missing-data architecture design.
+- Fu, Dong, Wang & Tian -- [Weakly Privileged Learning with Knowledge Extraction](https://www.sciencedirect.com/science/article/abs/pii/S0031320324002681) (2024). Privileged information extraction methods applicable to the transport distillation pipeline.
+- Zeng et al. -- [Estimating On-road Transportation Carbon Emissions from Open Data](https://arxiv.org/html/2402.05153v1) (2024). Geographic feature engineering for transport emission prediction.
+- **Textile Exchange** -- [Supply Chain Taxonomy for the Textile, Apparel, and Fashion Industry](https://textileexchange.org/app/uploads/2024/12/Supply-Chain-Taxonomy.pdf) (2024). Reference taxonomy informing the product category structure.
+- **Fashion for Good** -- [What is Textile Processing?](https://www.fashionforgood.com/our_news/what-is-textile-processing-understanding-the-fashion-supply-chain-and-its-environmental-impact/) Processing step definitions and environmental impact context.
