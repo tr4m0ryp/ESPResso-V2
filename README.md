@@ -601,7 +601,7 @@ SMOKE_TEST=1 python -m model.water_footprint.src.training.trainer
 - **Agribalyse 3.2** -- Agricultural LCA database for natural fiber water footprints
 - **Claude Sonnet 4.6 / 4.5 (Anthropic)** -- Primary LLM for data generation (Layers 1-4) and validation (Layer 5)
 - **Gemini 3.1 Pro (Google)** -- Fallback LLM used during Layer 6 enrichment when the UvA API gateway was unavailable
-- **[UvA AI Chat](https://ai.uva.nl)** -- University of Amsterdam AI platform providing LLM API access
+- **[UvA AI Chat](https://aichat.uva.nl/)** -- University of Amsterdam AI platform providing LLM API access
 - **PyTorch** -- Deep learning framework for both prediction models
 - **University of Amsterdam** -- Academic institution and infrastructure provider
 
