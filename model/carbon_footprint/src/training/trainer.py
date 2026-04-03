@@ -1,9 +1,7 @@
-"""CarbonTrainer -- training loop with curriculum learning, three-group loss,
-LUPI distillation, early stopping, and viability check."""
+"""CarbonTrainer -- training loop with curriculum, LUPI, early stopping."""
 
 import logging
 import math
-import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,6 +21,10 @@ from model.carbon_footprint.src.training.checkpoint import (
     CheckpointMixin, smoke_test,
 )
 from model.carbon_footprint.src.training.curriculum import curriculum_tier_probs
+from model.carbon_footprint.src.training.optimizer import (
+    build_optimizer_and_scheduler,
+    get_lr_scheduler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,24 +34,10 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
     logger.info(msg)
 
-# Re-export smoke_test at module level for convenience
+# Re-export smoke_test and get_lr_scheduler at module level for convenience
 __all__ = ["CarbonTrainer", "get_lr_scheduler", "smoke_test"]
 
 TARGET_KEYS = [f"cf_{h}" for h in HEAD_NAMES]
-
-
-def get_lr_scheduler(
-    optimizer: torch.optim.Optimizer,
-    warmup_epochs: int,
-    max_epochs: int,
-) -> torch.optim.lr_scheduler.LambdaLR:
-    """Linear warmup for warmup_epochs, then cosine decay to zero."""
-    def lr_lambda(epoch: int) -> float:
-        if epoch < warmup_epochs:
-            return max(epoch / warmup_epochs, 1e-4)
-        progress = (epoch - warmup_epochs) / max(max_epochs - warmup_epochs, 1)
-        return 0.5 * (1.0 + math.cos(math.pi * progress))
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
 class CarbonTrainer(CheckpointMixin):
@@ -73,13 +61,8 @@ class CarbonTrainer(CheckpointMixin):
         self.transform = transform
         self.history: List[Dict[str, Any]] = []
 
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=config.lr,
-            weight_decay=config.weight_decay,
-        )
-        self.scheduler = get_lr_scheduler(
-            self.optimizer, config.warmup_epochs, config.max_epochs,
+        self.optimizer, self.scheduler = build_optimizer_and_scheduler(
+            model, config,
         )
 
     @property
@@ -92,7 +75,6 @@ class CarbonTrainer(CheckpointMixin):
                 for k, v in batch.items()}
 
     def _transform_targets(self, batch: Dict[str, torch.Tensor]) -> None:
-        """In-place transform raw targets to z-score space in the batch."""
         for head in HEAD_NAMES:
             key = f"cf_{head}"
             raw = batch[key].cpu().numpy()
@@ -101,10 +83,7 @@ class CarbonTrainer(CheckpointMixin):
                 self.model_device
             )
 
-    # ----- train / val epochs -----
-
     def train_epoch(self, epoch: int) -> Tuple[float, Dict[str, float]]:
-        """Run one training epoch. Returns (epoch_loss, loss_component_dict)."""
         original_probs = self.config.tier_probs
         self.config.tier_probs = curriculum_tier_probs(self.config, epoch)
         self.model.train()
@@ -143,7 +122,6 @@ class CarbonTrainer(CheckpointMixin):
         tier: Optional[str] = None,
         loader: Optional[DataLoader] = None,
     ) -> Tuple[float, Dict[str, float]]:
-        """Run one validation epoch. Returns (val_loss, metrics_dict)."""
         self.model.eval()
         all_preds: List[np.ndarray] = []
         all_targets: List[np.ndarray] = []
@@ -174,14 +152,11 @@ class CarbonTrainer(CheckpointMixin):
         metrics["val_loss"] = avg_loss
         return avg_loss, metrics
 
-    # ----- full training loop -----
-
     def train(
         self,
         max_epochs: Optional[int] = None,
         patience: Optional[int] = None,
     ) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
-        """Full training loop with early stopping and checkpointing."""
         max_epochs = max_epochs or self.config.max_epochs
         patience = patience or self.config.patience
         best_val_loss = float("inf")
@@ -194,12 +169,18 @@ class CarbonTrainer(CheckpointMixin):
             val_loss, metrics = self.val_epoch()
             self.scheduler.step()
 
+            # LR per group: [0]=attention, [1]=embedding, [2]=mlp
+            lr_attn = self.optimizer.param_groups[0]["lr"]
+            lr_mlp = self.optimizer.param_groups[2]["lr"]
             entry = {
                 "epoch": epoch,
                 "train_loss": train_loss,
                 "val_loss": val_loss,
-                "lr": self.optimizer.param_groups[0]["lr"],
+                "lr_attn": lr_attn,
+                "lr_mlp": lr_mlp,
                 "distill_coeff": loss_comps.get("distill_coeff", 0.0),
+                "attn_entropy": loss_comps.get("attn_entropy", 0.0),
+                "L_entropy": loss_comps.get("L_entropy", 0.0),
                 "L_raw": loss_comps.get("L_raw", 0.0),
                 "L_transport": loss_comps.get("L_transport", 0.0),
                 "L_processing": loss_comps.get("L_processing", 0.0),
@@ -219,7 +200,8 @@ class CarbonTrainer(CheckpointMixin):
 
             _log(
                 f"Epoch {epoch:03d}  train={train_loss:.4f}  "
-                f"val={val_loss:.4f}  lr={entry['lr']:.2e}  "
+                f"val={val_loss:.4f}  "
+                f"lr_attn={lr_attn:.2e}  lr_mlp={lr_mlp:.2e}  "
                 f"pat={epochs_no_improve}/{patience}"
                 f"{'  *' if improved else ''}"
             )
@@ -233,6 +215,9 @@ class CarbonTrainer(CheckpointMixin):
                 _log(f"  Heads: {head_str}")
                 _log(f"  Total: MAE={metrics.get('total_mae', 0):.3f}  "
                      f"R2={metrics.get('total_r2', 0):.3f}")
+                ent = loss_comps.get("attn_entropy", 0.0)
+                l_ent = loss_comps.get("L_entropy", 0.0)
+                _log(f"  Attn: entropy={ent:.3f}  L_entropy={l_ent:.4f}")
 
             if epochs_no_improve >= patience:
                 _log(f"Early stopping at epoch {epoch}")
@@ -247,17 +232,8 @@ class CarbonTrainer(CheckpointMixin):
     # ----- viability check -----
 
     def viability_check(self, n_canary: int = 5) -> bool:
-        """Run canary epochs and verify learning signal.
-
-        Checks: no NaN/Inf, loss not exploding, loss eventually decreasing.
-        Accounts for LR warmup: loss may increase during warmup as the
-        learning rate ramps from near-zero to target. The check compares
-        the best loss in the second half of canary epochs against the
-        peak loss, not first-vs-last.
-
-        On fail, logs a diagnostic report. On pass, canary epochs count
-        toward total training (not discarded).
-        """
+        """Run canary epochs. Checks NaN, explosion, and convergence.
+        Warmup-aware: allows loss increase during LR ramp-up."""
         _log(f"--- viability check: {n_canary} canary epochs ---")
         train_losses: List[float] = []
         val_losses: List[float] = []
@@ -268,12 +244,15 @@ class CarbonTrainer(CheckpointMixin):
             self.scheduler.step()
             train_losses.append(tl)
             val_losses.append(vl)
-            lr = self.optimizer.param_groups[0]["lr"]
+            lr_attn = self.optimizer.param_groups[0]["lr"]
+            lr_mlp = self.optimizer.param_groups[2]["lr"]
             self.history.append({
-                "epoch": epoch, "train_loss": tl, "val_loss": vl, "lr": lr,
+                "epoch": epoch, "train_loss": tl, "val_loss": vl,
+                "lr_attn": lr_attn, "lr_mlp": lr_mlp,
             })
             _log(f"Canary {epoch+1}/{n_canary}  train={tl:.4f}  "
-                 f"val={vl:.4f}  lr={lr:.2e}")
+                 f"val={vl:.4f}  lr_attn={lr_attn:.2e}  "
+                 f"lr_mlp={lr_mlp:.2e}")
 
             if not math.isfinite(tl) or not math.isfinite(vl):
                 _log(f"ABORT: NaN/Inf loss at canary epoch {epoch}. "
@@ -291,9 +270,7 @@ class CarbonTrainer(CheckpointMixin):
                  f"instability. Try lr *= 0.1.")
             return False
 
-        # Check: second half of canary epochs shows improvement over peak.
-        # During LR warmup, loss may increase initially -- that's expected.
-        # We only require that the loss starts trending down eventually.
+        # Second half must show recovery from warmup-induced increase
         mid = max(n_canary // 2, 1)
         second_half_min = min(train_losses[mid:])
         first_half_max = max(train_losses[:mid])

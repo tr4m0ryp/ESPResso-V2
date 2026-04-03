@@ -75,6 +75,7 @@ class CarbonConfig:
     distill_peak: float = 0.1
     distill_floor: float = 0.02
     div_alpha: float = 0.02
+    entropy_alpha: float = 0.01  # penalize uniform attention (high entropy)
     head_loss_types: Dict[str, str] = field(default_factory=lambda: {
         "raw_materials": "mse",
         "processing": "mse",
@@ -92,19 +93,40 @@ class CarbonConfig:
     batch_size: int = 1024
     max_epochs: int = 100
     patience: int = 15
-    warmup_epochs: int = 5
+    warmup_epochs: int = 10
     scheduler: str = "cosine"
     num_workers: int = 4
     pin_memory: bool = True
     persistent_workers: bool = True
 
-    # -- Curriculum (Decision 21) --
-    curriculum_warmup_epochs: int = 20
+    # -- Differential learning rates (Decision: attention vs MLP) --
+    # Attention layers (self_attn, LayerNorm, CLS params) are sensitive to LR
+    # and benefit from a lower rate to prevent early oscillation. MLP layers
+    # (ProductEncoder, trunk, heads) are more robust and use the base LR.
+    # Ratio applied to base lr for attention parameter group.
+    attn_lr_ratio: float = 0.2
+    # Lower weight decay for attention to preserve rank (high decay induces
+    # low-rank attention matrices -- OpenReview 2024).
+    attn_weight_decay: float = 0.005
+    # Embedding layers: zero weight decay (standard practice).
+    emb_weight_decay: float = 0.0
+
+    # -- Curriculum (Decision 21, revised for carbon signal strength) --
+    # Carbon's geographic signal is weak (~3% of total CF from transport),
+    # unlike water where AWARE factors cause 100x variance. The original
+    # distribution (85% at tiers A-D) starved the model of location/step
+    # signal, producing flat MAE across all tiers (model ignored those
+    # features). Revised: ~45% degraded (A-C) for robustness, ~55%
+    # near-complete (D-F) so the model can actually learn from geographic
+    # and step features. Warmup extended from 20 to 30 epochs for smoother
+    # transition. Literature (CVPR 2024 modality dropout studies) supports
+    # 30-50% masking as the sweet spot for robustness without accuracy loss.
+    curriculum_warmup_epochs: int = 30
     tier_probs: Dict[str, float] = field(default_factory=lambda: {
-        "A": 0.25, "B": 0.20, "C": 0.20, "D": 0.20, "E": 0.10, "F": 0.05,
+        "A": 0.10, "B": 0.15, "C": 0.20, "D": 0.20, "E": 0.20, "F": 0.15,
     })
     curriculum_start_probs: Dict[str, float] = field(default_factory=lambda: {
-        "A": 0.10, "B": 0.10, "C": 0.10, "D": 0.15, "E": 0.20, "F": 0.35,
+        "A": 0.05, "B": 0.05, "C": 0.10, "D": 0.15, "E": 0.25, "F": 0.40,
     })
 
     # -- LUPI schedule --

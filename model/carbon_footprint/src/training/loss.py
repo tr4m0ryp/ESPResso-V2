@@ -59,6 +59,7 @@ class ThreeGroupLoss(nn.Module):
         self.distill_peak = config.distill_peak
         self.distill_floor = config.distill_floor
         self.div_alpha = config.div_alpha
+        self.entropy_alpha = config.entropy_alpha
         self.warmup_epochs = config.warmup_epochs
         self.curriculum_warmup_epochs = config.curriculum_warmup_epochs
         self.max_epochs = config.max_epochs
@@ -181,9 +182,10 @@ class ThreeGroupLoss(nn.Module):
         model_output: Dict[str, Any],
         epoch: int,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], float]:
-        """Distillation + diversity structural losses.
+        """Distillation + diversity + entropy structural losses.
 
         Skips L_distill when transport_emb is None (inference / some tiers).
+        Adds attention entropy regularization to prevent uniform attention.
         """
         proxy_t = model_output["proxy_transport"]
         proxy_p = model_output["proxy_processing"]
@@ -198,14 +200,37 @@ class ThreeGroupLoss(nn.Module):
         else:
             l_distill = torch.tensor(0.0, device=device)
 
-        # Diversity loss (cosine similarity -- minimize to encourage divergence)
-        l_div = F.cosine_similarity(proxy_t, proxy_p, dim=-1).mean()
+        # Diversity loss: (1 + cos_sim) / 2 maps [-1, 1] -> [0, 1].
+        # Raw cosine_similarity can go negative when proxies diverge,
+        # which made the total loss negative. This remapping keeps
+        # L_div in [0, 1] while preserving the same gradient direction:
+        # minimizing L_div still pushes cosine similarity toward -1.
+        raw_cos = F.cosine_similarity(proxy_t, proxy_p, dim=-1).mean()
+        l_div = (1.0 + raw_cos) / 2.0
 
-        structural = distill_c * l_distill + self.div_alpha * l_div
+        # Attention entropy regularization: penalize HIGH entropy (uniform
+        # attention). We want the CLS tokens to attend selectively to
+        # informative step-location pairs, not spread weight uniformly.
+        # L_entropy = max(0, entropy - target) so it only fires when
+        # entropy is above the threshold (too uniform).
+        attn_entropy = model_output.get("attn_entropy",
+                                        torch.tensor(0.0, device=device))
+        # Target: ~1.5 nats. For 10 tokens, max entropy is ln(10)=2.3.
+        # 1.5 nats means attending to ~4-5 tokens with unequal weights,
+        # which is appropriate for supply chain step sequences.
+        target_entropy = 1.5
+        l_entropy = F.relu(attn_entropy - target_entropy)
+
+        structural = (distill_c * l_distill
+                      + self.div_alpha * l_div
+                      + self.entropy_alpha * l_entropy)
 
         parts = {
             "L_distill": l_distill.detach(),
             "L_div": l_div.detach(),
+            "raw_cos_div": raw_cos.detach(),
+            "L_entropy": l_entropy.detach(),
+            "attn_entropy": attn_entropy.detach(),
         }
         return structural, parts, distill_c
 
@@ -240,6 +265,13 @@ class ThreeGroupLoss(nn.Module):
         )
 
         total_loss = main_loss + aux_loss + struct_loss
+
+        # Safety floor: total loss must never be negative. All three groups
+        # are designed to be non-negative individually, but floating-point
+        # accumulation could theoretically produce a tiny negative value.
+        # clamp preserves gradients when total_loss > 0 (identity), and
+        # zeros the gradient only in the degenerate negative case.
+        total_loss = total_loss.clamp(min=0.0)
 
         loss_dict = {
             "main_loss": main_loss.detach(),

@@ -96,19 +96,20 @@ def plot_loss_groups(
     history: List[Dict],
     save_path: Optional[str] = None,
 ) -> None:
-    """3-panel visualization of three-group loss dynamics over epochs.
+    """4-panel visualization of three-group loss dynamics + attention entropy.
 
-    Shows main_loss, aux_loss, and structural_loss (distillation + diversity)
-    as separate subplots, making it easy to diagnose which loss group
-    drives training behavior.
+    Shows main_loss, aux_loss, structural_loss (distillation + diversity),
+    and attention entropy as separate subplots. The entropy panel is a key
+    diagnostic for StepLocProxy learning: entropy dropping over training
+    means the CLS tokens are learning selective attention patterns.
 
     Args:
         history: List of dicts with keys: epoch, loss_dict containing
-                 main_loss, aux_loss, structural_loss.
+                 main_loss, aux_loss, structural_loss, attn_entropy.
     """
     setup_style()
     epochs = [h["epoch"] for h in history]
-    fig, axes = plt.subplots(1, 3, figsize=(11, 3.3))
+    fig, axes = plt.subplots(1, 4, figsize=(14, 3.3))
 
     # Panel 1: main head losses
     ax = axes[0]
@@ -140,5 +141,16 @@ def plot_loss_groups(
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
     ax.set_title("Structural Loss (Distill + Div)")
+
+    # Panel 4: attention entropy (StepLocProxy diagnostic)
+    ax = axes[3]
+    ent = [h.get("attn_entropy", 0.0) for h in history]
+    ax.plot(epochs, ent, color="tab:green", linewidth=1.5)
+    ax.axhline(y=1.5, color="tab:red", linestyle="--", linewidth=0.8,
+               label="target threshold")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Entropy (nats)")
+    ax.set_title("Attn Entropy (CLS rows)")
+    ax.legend(fontsize=8)
 
     _save_and_show(fig, save_path)

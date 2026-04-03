@@ -184,7 +184,7 @@ class CarbonModel(nn.Module):
         # -- Step-location proxy (geo prior bypass: F23) --
         if tm["has_locations"].any():
             # Run proxy for samples that have location data
-            proxy_t, proxy_p = self.step_loc_proxy(
+            proxy_t, proxy_p, attn_entropy = self.step_loc_proxy(
                 batch["step_loc_step_ids"], batch["step_loc_coords"],
                 batch["step_loc_mask"],
                 batch["haversine_sum"], batch["haversine_max"],
@@ -207,6 +207,7 @@ class CarbonModel(nn.Module):
             proxy_p = self.missing_step_loc_processing.unsqueeze(0).expand(
                 B, -1,
             )
+            attn_entropy = torch.tensor(0.0, device=device)
 
         # -- LUPI: privileged transport (Decision 5) --
         use_priv = (
@@ -275,4 +276,5 @@ class CarbonModel(nn.Module):
             "aux_distance_pred": aux_dist,
             "aux_mode_pred": aux_mode,
             "aux_weight_pred": aux_weight,
+            "attn_entropy": attn_entropy,
         }
