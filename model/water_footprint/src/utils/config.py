@@ -158,6 +158,29 @@ class WA1Config:
     checkpoint_dir: str = "checkpoints/water_footprint"
     runs_log: str = "runs.jsonl"
 
+    @classmethod
+    def production(cls) -> "WA1Config":
+        """Scaled-up production model: 1.5x embeddings, wider trunk."""
+        return cls(
+            embed_dim_material=48,
+            embed_dim_step=32,
+            embed_dim_category=24,
+            embed_dim_subcategory=24,
+            embed_dim_country=48,
+            encoder_output_dim=96,
+            product_enc_output_dim=64,
+            pkg_enc_output_dim=48,
+            cross_attn_d_model=96,
+            cross_attn_d_k=24,
+            gate_hidden_dim=24,
+            # trunk_input: mat(96) + step(96) + product(64) + pkg(48) = 304
+            trunk_input_dim=304,
+            trunk_hidden_dim=192,
+            trunk_layers=3,
+            head_input_dim=192,
+            head_hidden_dim=96,
+        )
+
     def to_json(self) -> str:
         """Serialize config to JSON string for experiment logging."""
         return json.dumps(asdict(self), indent=2)
