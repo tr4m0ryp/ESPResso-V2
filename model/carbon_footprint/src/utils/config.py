@@ -41,24 +41,24 @@ class CarbonConfig:
     vocab_steps: int = 56
     vocab_materials: int = 73
 
-    # -- Embedding dimensions (Decision 10) --
-    material_emb: int = 32
-    step_emb: int = 24
-    category_emb: int = 16
-    subcategory_emb: int = 16
+    # -- Embedding dimensions (scaled up from water model baseline) --
+    material_emb: int = 48
+    step_emb: int = 32
+    category_emb: int = 24
+    subcategory_emb: int = 24
 
-    # -- Encoder output dimensions (Decision 10) --
-    material_out: int = 64
-    step_loc_out: int = 64
-    product_out: int = 48
+    # -- Encoder output dimensions --
+    material_out: int = 96
+    step_loc_out: int = 96
+    product_out: int = 64
 
     # -- StepLocProxy config (Decision 4) --
     max_step_loc_tokens: int = 40
     step_loc_attn_heads: int = 4
 
-    # -- Trunk (Decision 10) --
-    trunk_hidden: int = 128
-    trunk_blocks: int = 2
+    # -- Trunk --
+    trunk_hidden: int = 192
+    trunk_blocks: int = 3
     trunk_dropout: float = 0.20
 
     # -- Output heads --
@@ -208,7 +208,22 @@ class CarbonConfig:
 
     @classmethod
     def full(cls) -> "CarbonConfig":
-        """Phase 3: production dims, GPU, final training."""
+        """Phase 3: water-model-matching dims, GPU, baseline training."""
+        return cls(
+            material_emb=32,
+            step_emb=24,
+            category_emb=16,
+            subcategory_emb=16,
+            material_out=64,
+            step_loc_out=64,
+            product_out=48,
+            trunk_hidden=128,
+            trunk_blocks=2,
+        )
+
+    @classmethod
+    def production(cls) -> "CarbonConfig":
+        """Phase 4: scaled-up dims, GPU, final production model."""
         return cls()
 
     # -- Serialization --
