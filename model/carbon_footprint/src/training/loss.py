@@ -63,6 +63,7 @@ class ThreeGroupLoss(nn.Module):
         self.warmup_epochs = config.warmup_epochs
         self.curriculum_warmup_epochs = config.curriculum_warmup_epochs
         self.max_epochs = config.max_epochs
+        self.min_head_weight = config.min_head_weight
 
         # Per-head loss function dispatch
         self.head_loss_fns = {}
@@ -99,9 +100,18 @@ class ThreeGroupLoss(nn.Module):
         # DB-MTL log-normalization
         log_losses = torch.log1p(losses)
 
-        # Analytical UW-SO: inverse-loss weighting with temperature
+        # Analytical UW-SO: inverse-loss weighting with temperature.
+        # Minimum weight floor prevents packaging (near-constant, tiny loss)
+        # from being starved of gradient signal. Without this floor, the
+        # softmax assigns ~0.01 weight to packaging while the other heads
+        # get ~0.33 each, causing the trunk to optimize exclusively for
+        # the higher-loss heads and destroying the packaging mapping.
         inv = 1.0 / (log_losses.detach() + 1e-6)
         weights = F.softmax(inv / self.temperature, dim=0)
+        if self.min_head_weight > 0:
+            floor = self.min_head_weight
+            weights = weights.clamp(min=floor)
+            weights = weights / weights.sum()  # re-normalize
 
         main_loss = (weights * log_losses).sum()
 

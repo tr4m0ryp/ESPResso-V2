@@ -76,6 +76,11 @@ class CarbonConfig:
     distill_floor: float = 0.02
     div_alpha: float = 0.02
     entropy_alpha: float = 0.01  # penalize uniform attention (high entropy)
+    # Minimum weight floor per head in UW-SO. Prevents packaging (near-
+    # constant target with tiny loss) from getting starved by inverse-loss
+    # weighting. 0.10 ensures each head gets at least 10% of the gradient
+    # budget. Set to 0.0 to disable.
+    min_head_weight: float = 0.10
     head_loss_types: Dict[str, str] = field(default_factory=lambda: {
         "raw_materials": "mse",
         "processing": "mse",
