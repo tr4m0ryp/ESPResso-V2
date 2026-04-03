@@ -113,8 +113,7 @@ def plot_loss_groups(
 
     # Panel 1: main head losses
     ax = axes[0]
-    main = [h.get("loss_dict", {}).get("main_loss", h.get("main_loss", 0.0))
-            for h in history]
+    main = [h.get("main_loss", 0.0) for h in history]
     ax.plot(epochs, main, color="tab:blue", linewidth=1.5)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
@@ -122,8 +121,7 @@ def plot_loss_groups(
 
     # Panel 2: auxiliary losses (distance, mode, weight)
     ax = axes[1]
-    aux = [h.get("loss_dict", {}).get("aux_loss", h.get("aux_loss", 0.0))
-           for h in history]
+    aux = [h.get("aux_loss", 0.0) for h in history]
     ax.plot(epochs, aux, color="tab:orange", linewidth=1.5)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
@@ -131,12 +129,7 @@ def plot_loss_groups(
 
     # Panel 3: structural losses (distillation + diversity)
     ax = axes[2]
-    struct = [
-        h.get("loss_dict", {}).get(
-            "structural_loss", h.get("structural_loss", 0.0)
-        )
-        for h in history
-    ]
+    struct = [h.get("structural_loss", 0.0) for h in history]
     ax.plot(epochs, struct, color="tab:purple", linewidth=1.5)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
