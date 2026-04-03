@@ -27,7 +27,8 @@ def log_cosh_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     Twice differentiable (unlike Huber). No delta hyperparameter.
     """
     diff = pred - target
-    return torch.mean(diff + F.softplus(-2.0 * diff) - math.log(2.0))
+    abs_diff = diff.abs()
+    return torch.mean(abs_diff + F.softplus(-2.0 * abs_diff) - math.log(2.0))
 
 
 # -- Head loss dispatch --
@@ -124,10 +125,10 @@ class ThreeGroupLoss(nn.Module):
         aux_terms = {}
         count = 0
 
-        # Distance prediction
+        # Distance prediction (priv_total_distance_km is already log1p'd in dataset)
         aux_dist = model_output.get("aux_distance_pred")
         if aux_dist is not None:
-            target_dist = torch.log1p(batch["priv_total_distance_km"])
+            target_dist = batch["priv_total_distance_km"]
             aux_terms["L_aux_dist"] = F.mse_loss(aux_dist, target_dist)
             count += 1
 

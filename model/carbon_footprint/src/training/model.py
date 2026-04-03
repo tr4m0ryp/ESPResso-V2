@@ -112,16 +112,40 @@ class CarbonModel(nn.Module):
             nn.Linear(config.trunk_hidden // 2, 1),
         )
 
+        # Initialize weights for stability
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Xavier init for linear layers, small init for output heads."""
+        for module in [self.trunk_proj, *self.trunk_blocks]:
+            for m in module.modules():
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight)
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
+        # Output heads: small init to start near zero predictions
+        for head in [self.head_raw, self.head_transport,
+                     self.head_processing, self.head_packaging]:
+            for m in head.modules():
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight, gain=0.1)
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
+
     def _build_priv_distances(
         self, batch: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        """Stack privileged distance features into [B, 6] log1p tensor."""
+        """Stack privileged distance features into [B, 6] tensor.
+
+        NOTE: priv_* values are already log1p-transformed in the dataset
+        parser (parsing.py). Do NOT apply log1p again here.
+        """
         keys = [
             "priv_road_km", "priv_sea_km", "priv_rail_km",
             "priv_air_km", "priv_waterway_km", "priv_total_distance_km",
         ]
         return torch.stack(
-            [torch.log1p(batch[k]) for k in keys], dim=-1,
+            [batch[k] for k in keys], dim=-1,
         )  # [B, 6]
 
     def forward(
