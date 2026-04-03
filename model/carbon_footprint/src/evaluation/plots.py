@@ -80,9 +80,8 @@ def _collect_predictions(
 
         for i, head in enumerate(HEAD_NAMES):
             preds[head].append(transform.inverse(pred_np[:, i], head))
-            actuals[head].append(
-                transform.inverse(batch[f"cf_{head}"].numpy(), head)
-            )
+            # Batch targets are already raw kgCO2e -- use directly
+            actuals[head].append(batch[f"cf_{head}"].numpy())
 
     preds_cat = {h: np.concatenate(v) for h, v in preds.items()}
     actuals_cat = {h: np.concatenate(v) for h, v in actuals.items()}
