@@ -296,7 +296,6 @@ Three-group hierarchical loss:
 | LUPI priv_ratio | 0.60 (trunk sees privileged transport 60% of training) |
 | Target transform | log1p + z-score normalization |
 | Epochs run | 105 |
-| Training time | 5.4 min (Colab T4 GPU) |
 
 <p align="center">
   <img src="results/carbon_footprint/plots/training_curves.png" alt="Carbon model training curves" width="700">
@@ -387,7 +386,6 @@ Log-variance scalars are clamped to [-4, 4] to prevent the regularization term f
 | Subcategory mask | 15% independent dropout |
 | Target transform | log1p + z-score normalization |
 | Epochs run | 105 |
-| Training time | 4.0 min (Colab T4 GPU) |
 
 Note the water model's tier distribution is heavily skewed toward degraded tiers (A+B = 60%) compared to the carbon model (A+B = 25%). This reflects the water model's design priority: geography is so dominant that the model must excel at graceful degradation when location data is unavailable.
 
@@ -465,7 +463,6 @@ Overall tier degradation factor: 2.4x. The confidence gates play a critical role
 | Special modules | MaterialLocAssignment (Sinkhorn), TransportEncoder | GeoAttentionBlock, ConfidenceGate |
 | Tier A-B strategy | Learned missing embeddings, packaging shortcut | Prior-heavy gates (bias -2.0), auxiliary weight |
 | Tier distribution | A:10%, B:15%, C:20%, D:20%, E:20%, F:15% | A:35%, B:25%, C:15%, D:10%, E:10%, F:5% |
-| Training time | 5.4 min (105 epochs, T4) | 4.0 min (105 epochs, T4) |
 | Dataset | 49,732 records (70/15/15 split) | 49,732 records (70/15/15 split) |
 
 ## Repository Structure
