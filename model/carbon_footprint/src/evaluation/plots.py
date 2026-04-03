@@ -97,7 +97,7 @@ def plot_training_curves(
 
     Args:
         history: List of dicts with keys: epoch, train_loss, val_loss,
-                 head_losses (dict per head name), lr, distill_alpha.
+                 L_raw, L_transport, L_processing, L_packaging, lr, distill_coeff.
     """
     setup_style()
     epochs = [h["epoch"] for h in history]
@@ -115,7 +115,7 @@ def plot_training_curves(
     # Top-right: per-head losses (4 lines)
     ax = axes[0, 1]
     for head in HEAD_NAMES:
-        vals = [h["head_losses"].get(head, 0.0) for h in history]
+        vals = [h.get(f"L_{head}", 0.0) for h in history]
         ax.plot(epochs, vals, label=HEAD_LABELS[head])
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Head Loss")
@@ -132,7 +132,7 @@ def plot_training_curves(
 
     # Bottom-right: distillation coefficient over epochs
     ax = axes[1, 1]
-    distill = [h.get("distill_alpha", 0.0) for h in history]
+    distill = [h.get("distill_coeff", 0.0) for h in history]
     ax.plot(epochs, distill, color="tab:red")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Distillation Coefficient")
