@@ -56,6 +56,11 @@ class CarbonConfig:
     max_step_loc_tokens: int = 40
     step_loc_attn_heads: int = 4
 
+    # -- Material-location cross-attention assignment --
+    assign_dim: int = 48   # common projection dimension for cross-attention
+    assign_out: int = 32   # output dimension after assignment pooling
+    sinkhorn_iters: int = 3  # Sinkhorn normalization iterations
+
     # -- Trunk --
     trunk_hidden: int = 192
     trunk_blocks: int = 3
@@ -76,6 +81,7 @@ class CarbonConfig:
     distill_floor: float = 0.02
     div_alpha: float = 0.02
     entropy_alpha: float = 0.01  # penalize uniform attention (high entropy)
+    rkd_alpha: float = 0.5  # RKD blend: 1.0=pure instance MSE, 0.0=pure relational
     # Minimum weight floor per head in UW-SO. Prevents packaging (near-
     # constant target with tiny loss) from getting starved by inverse-loss
     # weighting. 0.10 ensures each head gets at least 10% of the gradient
@@ -140,8 +146,13 @@ class CarbonConfig:
     # -- Padding --
     max_materials: int = 5
 
-    # -- Coordinate encoding (Decision 20) --
-    coord_dim: int = 4  # sin(lat), cos(lat), sin(lon), cos(lon)
+    # -- Coordinate encoding (Decision 20, multi-scale) --
+    coord_dim: int = 32  # 4 * coord_scales sin/cos features
+    coord_scales: int = 8  # number of frequency scales for positional encoding
+
+    # -- Distance histogram features --
+    n_dist_bins: int = 16  # pairwise distance histogram bins
+    n_step_pair_dists: int = 8  # top-K step-pair distances
 
     # -- Data split --
     split_ratios: List[float] = field(
@@ -181,6 +192,8 @@ class CarbonConfig:
             material_out=32,
             step_loc_out=32,
             product_out=24,
+            assign_dim=16,
+            assign_out=8,
             trunk_hidden=32,
             trunk_blocks=1,
             step_loc_attn_heads=1,
@@ -199,6 +212,8 @@ class CarbonConfig:
             material_out=48,
             step_loc_out=48,
             product_out=32,
+            assign_dim=24,
+            assign_out=16,
             trunk_hidden=64,
             trunk_blocks=1,
             step_loc_attn_heads=2,
@@ -217,6 +232,8 @@ class CarbonConfig:
             material_out=64,
             step_loc_out=64,
             product_out=48,
+            assign_dim=32,
+            assign_out=24,
             trunk_hidden=128,
             trunk_blocks=2,
         )

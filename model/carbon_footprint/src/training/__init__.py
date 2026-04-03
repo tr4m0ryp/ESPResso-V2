@@ -6,6 +6,9 @@ from model.carbon_footprint.src.training.encoders import (
     TransportEncoder,
 )
 from model.carbon_footprint.src.training.step_loc_proxy import StepLocProxy
+from model.carbon_footprint.src.training.material_loc_assign import (
+    MaterialLocAssignment,
+)
 from model.carbon_footprint.src.training.model import CarbonModel
 from model.carbon_footprint.src.training.loss import ThreeGroupLoss
 from model.carbon_footprint.src.training.trainer import CarbonTrainer
@@ -20,6 +23,7 @@ __all__ = [
     "CarbonTrainer",
     "CheckpointMixin",
     "MaterialEncoder",
+    "MaterialLocAssignment",
     "ProductEncoder",
     "ThreeGroupLoss",
     "TransportEncoder",

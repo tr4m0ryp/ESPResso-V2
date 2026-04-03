@@ -65,25 +65,32 @@ class StepLocProxy(nn.Module):
     """Encode step-location tokens via self-attention with dual CLS readout.
 
     Input:
-        step_loc_step_ids  [B, max_tokens]    -- step vocab indices (0=pad)
-        step_loc_coords    [B, max_tokens, 4] -- sin/cos encoded lat/lon
-        step_loc_mask      [B, max_tokens]     -- True where valid
+        step_loc_step_ids  [B, max_tokens]         -- step vocab indices (0=pad)
+        step_loc_coords    [B, max_tokens, coord_dim] -- multi-scale sin/cos
+        step_loc_mask      [B, max_tokens]         -- True where valid
         haversine_sum      [B]
         haversine_max      [B]
         haversine_mean     [B]
+        distance_histogram [B, n_dist_bins]        -- pairwise distance hist
+        step_pair_distances [B, n_step_pair_dists] -- top-K step-pair dists
 
     Output:
-        (proxy_transport [B, D], proxy_processing [B, D], attn_entropy scalar)
+        (proxy_transport [B, D], proxy_processing [B, D], attn_entropy scalar,
+         pre_cls_tokens [B, N, D])
 
-    When all tokens are masked, returns learned missing embeddings and
-    zero entropy.
+    pre_cls_tokens are the per-location embeddings from token_mlp BEFORE
+    CLS prepend and self-attention. Used by MaterialLocAssignment for
+    cross-attention between materials and step-locations.
+
+    When all tokens are masked, returns learned missing embeddings,
+    zero entropy, and zeroed pre_cls_tokens.
     """
 
     def __init__(self, config: CarbonConfig) -> None:
         super().__init__()
         D = config.step_loc_out
         self.step_emb = nn.Embedding(config.vocab_steps, config.step_emb)
-        token_in_dim = config.step_emb + config.coord_dim  # emb + 4
+        token_in_dim = config.step_emb + config.coord_dim
 
         self.token_mlp = nn.Sequential(
             nn.Linear(token_in_dim, D),
@@ -112,15 +119,17 @@ class StepLocProxy(nn.Module):
         )
         self.post_norm = nn.LayerNorm(D)
 
-        # Haversine gate: learned sigmoid controls how much the haversine
-        # stats contribute vs the CLS attention output. Without this gate,
-        # the projection MLP can route everything through the 3 scalar stats
-        # and ignore the CLS output entirely, making attention useless.
+        # Geographic feature gate: learned sigmoid controls how much the geo
+        # features (3 haversine stats + distance histogram + step-pair dists)
+        # contribute vs the CLS attention output. Without this gate, the
+        # projection MLP can route everything through the scalar stats and
+        # ignore the CLS output entirely, making attention useless.
+        geo_dim = 3 + config.n_dist_bins + config.n_step_pair_dists  # 27
         self.haversine_gate = nn.Sequential(
-            nn.Linear(3, D),
+            nn.Linear(geo_dim, D),
             nn.Sigmoid(),
         )
-        self.haversine_proj = nn.Linear(3, D)
+        self.haversine_proj = nn.Linear(geo_dim, D)
 
         # Post-CLS projection now works in D-space (CLS and gated haversine
         # are both D-dimensional, combined via element-wise product + add).
@@ -145,14 +154,19 @@ class StepLocProxy(nn.Module):
         haversine_sum: torch.Tensor,
         haversine_max: torch.Tensor,
         haversine_mean: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        distance_histogram: torch.Tensor,
+        step_pair_distances: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         B, N = step_loc_step_ids.shape
         device = step_loc_step_ids.device
 
         # Per-token: step_emb || coords -> MLP
         e = self.step_emb(step_loc_step_ids)             # [B, N, step_emb]
-        x = torch.cat([e, step_loc_coords], dim=-1)      # [B, N, step_emb+4]
+        x = torch.cat([e, step_loc_coords], dim=-1)      # [B, N, token_in_dim]
         x = self.token_mlp(x)                             # [B, N, D]
+
+        # Save pre-CLS tokens for MaterialLocAssignment cross-attention
+        pre_cls_tokens = x                                # [B, N, D]
 
         # Prepend dual CLS tokens
         cls_t = self.cls_transport.expand(B, -1, -1)      # [B, 1, D]
@@ -183,14 +197,18 @@ class StepLocProxy(nn.Module):
         cls_transport_out = tokens[:, 0, :]                # [B, D]
         cls_processing_out = tokens[:, 1, :]               # [B, D]
 
-        # Gated haversine fusion: the gate controls per-dimension mixing
-        # between CLS attention output and haversine scalar features.
-        # This prevents haversine from drowning the attention signal.
-        h_stats = torch.stack([
+        # Gated geo fusion: the gate controls per-dimension mixing between
+        # CLS attention output and geographic features (3 haversine stats +
+        # 16-bin distance histogram + 8 step-pair distances = 27 features).
+        h_scalar = torch.stack([
             torch.log1p(haversine_sum),
             torch.log1p(haversine_max),
             torch.log1p(haversine_mean),
         ], dim=-1)                                         # [B, 3]
+        # distance_histogram and step_pair_distances are already log1p-scaled
+        h_stats = torch.cat([
+            h_scalar, distance_histogram, step_pair_distances,
+        ], dim=-1)                                         # [B, 27]
         h_gate = self.haversine_gate(h_stats)              # [B, D] in (0,1)
         h_val = self.haversine_proj(h_stats)               # [B, D]
 
@@ -223,4 +241,4 @@ class StepLocProxy(nn.Module):
             has_tokens = (~all_masked).float().mean()
             entropy = entropy * has_tokens
 
-        return proxy_transport, proxy_processing, entropy
+        return proxy_transport, proxy_processing, entropy, pre_cls_tokens
