@@ -1,12 +1,8 @@
 """CarbonModel -- LUPI-Enhanced Multi-Encoder with Dual CLS.
 
-Wires together MaterialEncoder, StepLocProxy, ProductEncoder,
-TransportEncoder (privileged), residual trunk, 4 output heads,
-and 3 auxiliary heads. Implements tier-based masking and LUPI
-distillation in forward().
-
+Multi-task interference fixes: packaging shortcut bypasses trunk,
+processing branch isolates gradients from shared attention.
 Reference: notes/carbon_model_discuss.md (Decisions 4-7, 11-12, 16, 21)
-Reference: research/model-design.md (Decided Architecture section)
 """
 
 import random
@@ -101,6 +97,22 @@ class CarbonModel(nn.Module):
         self.head_processing = _make_head()
         self.head_packaging = _make_head()
 
+        # -- Packaging shortcut: bypass trunk for near-constant target --
+        pkg_shortcut_in = 1 + config.category_emb + config.subcategory_emb
+        self.pkg_shortcut = nn.Sequential(
+            nn.Linear(pkg_shortcut_in, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+        )
+
+        # -- Processing branch: gradient-isolated path for proxy_processing --
+        proc_branch_in = config.step_loc_out + config.product_out
+        self.processing_branch = nn.Sequential(
+            nn.Linear(proc_branch_in, config.trunk_hidden // 2),
+            nn.GELU(),
+            nn.Linear(config.trunk_hidden // 2, 1),
+        )
+
         # -- 3 auxiliary heads (training only) --
         self.head_aux_distance = nn.Linear(config.step_loc_out, 1)
         self.head_aux_mode = nn.Linear(config.step_loc_out, 2)
@@ -131,15 +143,18 @@ class CarbonModel(nn.Module):
                     nn.init.xavier_uniform_(m.weight, gain=0.1)
                     if m.bias is not None:
                         nn.init.zeros_(m.bias)
+        # Shortcut and branch: small init so trunk heads dominate initially
+        for module in [self.pkg_shortcut, self.processing_branch]:
+            for m in module.modules():
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight, gain=0.1)
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
 
     def _build_priv_distances(
         self, batch: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        """Stack privileged distance features into [B, 6] tensor.
-
-        NOTE: priv_* values are already log1p-transformed in the dataset
-        parser (parsing.py). Do NOT apply log1p again here.
-        """
+        """Stack privileged distances [B, 6]. Already log1p'd in parser."""
         keys = [
             "priv_road_km", "priv_sea_km", "priv_rail_km",
             "priv_air_km", "priv_waterway_km", "priv_total_distance_km",
@@ -153,17 +168,7 @@ class CarbonModel(nn.Module):
         batch: Dict[str, torch.Tensor],
         tier: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Forward pass with tier-based masking and LUPI distillation.
-
-        Args:
-            batch: Dict of tensors from CarbonDataset.
-            tier: Fixed tier (A-F), or None for curriculum (train) / E (eval).
-
-        Returns:
-            Dict with keys: preds [B, 4], proxy_transport [B, D],
-            proxy_processing [B, D], transport_emb [B, D] or None,
-            aux_distance_pred [B], aux_mode_pred [B, 2], aux_weight_pred [B].
-        """
+        """Forward pass. Returns preds [B,4] + proxy/aux/entropy outputs."""
         B = batch["category_idx"].shape[0]
         device = batch["category_idx"].device
         cfg = self.config
@@ -251,21 +256,34 @@ class CarbonModel(nn.Module):
             torch.cat([cat_emb, mat_emb], dim=-1),
         ).squeeze(-1)  # [B]
 
-        # -- Residual trunk --
+        # -- Residual trunk (proxy_p detached: no grad to shared attn) --
+        proxy_p_detached = proxy_p.detach()
         trunk_in = torch.cat(
-            [mat_emb, trunk_transport, proxy_p, product_emb, pkg_scalar],
+            [mat_emb, trunk_transport, proxy_p_detached, product_emb,
+             pkg_scalar],
             dim=-1,
         )  # [B, trunk_in_dim]
         h = F.gelu(self.trunk_proj(trunk_in))  # [B, trunk_hidden]
         for block in self.trunk_blocks:
             h = block(h)
 
+        # -- Processing branch (proxy_p with grad -> processing_proj) --
+        proc_branch_in = torch.cat([proxy_p, product_emb], dim=-1)
+        proc_correction = self.processing_branch(proc_branch_in)  # [B, 1]
+
+        # -- Packaging shortcut (pkg_scalar + product context) --
+        subcat_emb = self.product_enc.subcat_emb(batch["subcategory_idx"])
+        pkg_shortcut_in = torch.cat(
+            [pkg_scalar, cat_emb, subcat_emb], dim=-1,
+        )  # cat_emb already computed above for aux_weight
+        pkg_shortcut_pred = self.pkg_shortcut(pkg_shortcut_in)  # [B, 1]
+
         # -- Output heads --
         preds = torch.cat([
             self.head_raw(h),
             self.head_transport(h),
-            self.head_processing(h),
-            self.head_packaging(h),
+            self.head_processing(h) + proc_correction,
+            self.head_packaging(h) + pkg_shortcut_pred,
         ], dim=-1)  # [B, 4]
 
         return {

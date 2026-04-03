@@ -29,22 +29,27 @@ _ATTN_DROPOUT = 0.05
 
 
 def _attn_entropy(weights: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Mean entropy of attention distributions over valid (non-padded) tokens.
+    """Mean entropy of the transport CLS attention distribution.
+
+    Only measures the transport CLS (index 0), NOT the processing CLS.
+    The entropy regularizer in the loss function penalizes high entropy
+    (uniform attention). Applying this to the processing CLS would force
+    it to attend selectively in a pattern shaped by the transport-optimized
+    attention layer, preventing it from learning processing-relevant
+    attention patterns independently.
 
     Args:
         weights: [B, heads, seq, seq] attention weights from MHA.
         mask: [B, seq] True where token is valid (not padded).
 
     Returns:
-        Scalar mean entropy across batch and heads (CLS rows only).
+        Scalar mean entropy across batch and heads (transport CLS only).
     """
-    # We only care about the CLS rows (indices 0 and 1) attending to tokens.
-    cls_weights = weights[:, :, :2, :]          # [B, H, 2, seq]
+    # Only transport CLS (index 0). Processing CLS (index 1) is free.
+    cls_weights = weights[:, :, 0:1, :]         # [B, H, 1, seq]
 
     # Mask out padding positions for clean entropy calculation
     pad_mask = mask.unsqueeze(1).unsqueeze(2)   # [B, 1, 1, seq]
-    # Replace padded positions with zero probability (already near-zero from
-    # key_padding_mask, but be explicit)
     cls_weights = cls_weights * pad_mask.float()
     # Re-normalize over valid positions
     denom = cls_weights.sum(dim=-1, keepdim=True).clamp(min=1e-8)
@@ -52,7 +57,7 @@ def _attn_entropy(weights: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
     # Shannon entropy: -sum(p * log(p)), with 0*log(0)=0
     log_w = torch.log(cls_weights + 1e-8)
-    entropy = -(cls_weights * log_w).sum(dim=-1)  # [B, H, 2]
+    entropy = -(cls_weights * log_w).sum(dim=-1)  # [B, H, 1]
     return entropy.mean()
 
 
