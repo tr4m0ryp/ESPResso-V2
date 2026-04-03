@@ -200,7 +200,7 @@ class WaterFootprintDataset(Dataset):
                  vocab: Optional[Dict[str, Dict[str, int]]] = None,
                  max_materials: int = 5, max_steps: int = 27,
                  max_locations: int = 8, max_packaging: int = 3) -> None:
-        df = pd.read_csv(data_path)
+        df = pd.read_parquet(data_path)
         logger.info("Loaded %d records from %s", len(df), data_path)
 
         if vocab is None:
