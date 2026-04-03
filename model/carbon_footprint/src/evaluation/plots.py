@@ -122,12 +122,16 @@ def plot_training_curves(
     ax.set_title("Per-Head Losses")
     ax.legend(fontsize=7)
 
-    # Bottom-left: learning rate schedule
+    # Bottom-left: learning rate schedule (attention + MLP groups)
     ax = axes[1, 0]
-    ax.plot(epochs, [h["lr"] for h in history], color="tab:green")
+    lr_mlp = [h.get("lr_mlp", h.get("lr", 0.0)) for h in history]
+    lr_attn = [h.get("lr_attn", h.get("lr", 0.0)) for h in history]
+    ax.plot(epochs, lr_mlp, color="tab:green", label="MLP")
+    ax.plot(epochs, lr_attn, color="tab:olive", label="Attention")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Learning Rate")
     ax.set_title("LR Schedule")
+    ax.legend(fontsize=7)
     ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
 
     # Bottom-right: distillation coefficient over epochs
