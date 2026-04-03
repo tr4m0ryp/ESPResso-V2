@@ -158,8 +158,11 @@ def per_tier_evaluation(
             out = model(batch_dev, tier=tier)
             all_preds.append(out["preds"].detach().cpu().numpy())
 
-            # Stack target columns in head order
-            target_cols = [batch[f"cf_{h}"].cpu().numpy() for h in HEAD_NAMES]
+            # Transform raw targets to z-score space (same as val_epoch)
+            target_cols = []
+            for h in HEAD_NAMES:
+                raw = batch[f"cf_{h}"].cpu().numpy()
+                target_cols.append(transform.transform(raw, h))
             all_targets.append(np.column_stack(target_cols))
 
         preds_z = np.concatenate(all_preds, axis=0)
