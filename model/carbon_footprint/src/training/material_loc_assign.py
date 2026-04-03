@@ -53,16 +53,22 @@ def _sinkhorn(
     loc_valid = loc_mask.unsqueeze(1).float()   # [B, 1, N]
     mask_2d = mat_valid * loc_valid              # [B, M, N]
 
-    log_alpha = log_alpha.masked_fill(mask_2d == 0, float("-inf"))
+    # Mask invalid positions with large negative (not -inf to avoid NaN
+    # in logsumexp when entire rows/columns are masked during tier masking)
+    log_alpha = log_alpha.masked_fill(mask_2d == 0, -1e9)
 
     for _ in range(iters):
         # Row normalization (across locations for each material)
-        log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=2, keepdim=True)
+        row_lse = torch.logsumexp(log_alpha, dim=2, keepdim=True)
+        log_alpha = log_alpha - row_lse
         # Column normalization (across materials for each location)
-        log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=1, keepdim=True)
+        col_lse = torch.logsumexp(log_alpha, dim=1, keepdim=True)
+        log_alpha = log_alpha - col_lse
 
     # Convert from log-space and zero out masked positions
     weights = log_alpha.exp() * mask_2d
+    # Clamp any residual NaN from fully-masked samples to zero
+    weights = torch.nan_to_num(weights, nan=0.0)
     return weights
 
 
