@@ -113,10 +113,12 @@ class StepLocProxy(nn.Module):
         cls_transport_out = tokens[:, 0, :]                # [B, D]
         cls_processing_out = tokens[:, 1, :]               # [B, D]
 
-        # Concat haversine stats and project
-        h_stats = torch.stack(
-            [haversine_sum, haversine_max, haversine_mean], dim=-1
-        )                                                  # [B, 3]
+        # Concat haversine stats (log-scaled to prevent overflow) and project
+        h_stats = torch.stack([
+            torch.log1p(haversine_sum),
+            torch.log1p(haversine_max),
+            torch.log1p(haversine_mean),
+        ], dim=-1)                                         # [B, 3]
 
         proxy_transport = self.transport_proj(
             torch.cat([cls_transport_out, h_stats], dim=-1)
