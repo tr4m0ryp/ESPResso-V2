@@ -3,6 +3,7 @@ LUPI distillation, early stopping, and viability check."""
 
 import logging
 import math
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,6 +25,12 @@ from model.carbon_footprint.src.training.checkpoint import (
 from model.carbon_footprint.src.training.curriculum import curriculum_tier_probs
 
 logger = logging.getLogger(__name__)
+
+
+def _log(msg: str) -> None:
+    """Print to stdout (works in notebooks) and logger.info."""
+    print(msg, flush=True)
+    logger.info(msg)
 
 # Re-export smoke_test at module level for convenience
 __all__ = ["CarbonTrainer", "get_lr_scheduler", "smoke_test"]
@@ -210,23 +217,30 @@ class CarbonTrainer(CheckpointMixin):
             else:
                 epochs_no_improve += 1
 
-            logger.info(
-                "Epoch %03d  train=%.4f  val=%.4f  lr=%.2e"
-                "  pat=%d/%d%s",
-                epoch, train_loss, val_loss,
-                entry["lr"], epochs_no_improve, patience,
-                "  *" if improved else "",
+            _log(
+                f"Epoch {epoch:03d}  train={train_loss:.4f}  "
+                f"val={val_loss:.4f}  lr={entry['lr']:.2e}  "
+                f"pat={epochs_no_improve}/{patience}"
+                f"{'  *' if improved else ''}"
             )
+            # Detailed per-head metrics every 10 epochs or on improvement
+            if improved or epoch % 10 == 0:
+                head_str = "  ".join(
+                    f"{h}: MAE={metrics.get(f'{h}_mae', 0):.3f} "
+                    f"R2={metrics.get(f'{h}_r2', 0):.3f}"
+                    for h in HEAD_NAMES
+                )
+                _log(f"  Heads: {head_str}")
+                _log(f"  Total: MAE={metrics.get('total_mae', 0):.3f}  "
+                     f"R2={metrics.get('total_r2', 0):.3f}")
 
             if epochs_no_improve >= patience:
-                logger.info("Early stopping at epoch %d", epoch)
+                _log(f"Early stopping at epoch {epoch}")
                 break
 
         elapsed = time.time() - start_time
-        logger.info(
-            "Training complete in %.1fs. Best val_loss=%.4f",
-            elapsed, best_val_loss,
-        )
+        _log(f"Training complete in {elapsed:.1f}s. "
+             f"Best val_loss={best_val_loss:.4f}")
         self.log_run(best_metrics, elapsed)
         return best_metrics, self.history
 
@@ -244,7 +258,7 @@ class CarbonTrainer(CheckpointMixin):
         On fail, logs a diagnostic report. On pass, canary epochs count
         toward total training (not discarded).
         """
-        logger.info("--- viability check: %d canary epochs ---", n_canary)
+        _log(f"--- viability check: {n_canary} canary epochs ---")
         train_losses: List[float] = []
         val_losses: List[float] = []
 
@@ -258,29 +272,23 @@ class CarbonTrainer(CheckpointMixin):
             self.history.append({
                 "epoch": epoch, "train_loss": tl, "val_loss": vl, "lr": lr,
             })
-            logger.info(
-                "Canary %d/%d  train=%.4f  val=%.4f  lr=%.2e",
-                epoch + 1, n_canary, tl, vl, lr,
-            )
+            _log(f"Canary {epoch+1}/{n_canary}  train={tl:.4f}  "
+                 f"val={vl:.4f}  lr={lr:.2e}")
 
             if not math.isfinite(tl) or not math.isfinite(vl):
-                logger.error(
-                    "ABORT: NaN/Inf loss at canary epoch %d. "
-                    "Likely cause: learning rate too high. "
-                    "Try reducing lr by 10x.", epoch,
-                )
+                _log(f"ABORT: NaN/Inf loss at canary epoch {epoch}. "
+                     f"Likely cause: learning rate too high. "
+                     f"Try reducing lr by 10x.")
                 return False
 
         # Check: loss not exploding (>10x the minimum observed)
         min_loss = min(train_losses)
         max_loss = max(train_losses)
         if max_loss > min_loss * 10 and max_loss > 5.0:
-            logger.error(
-                "ABORT: Training loss exploded (min=%.4f, max=%.4f). "
-                "Likely cause: learning rate too high or numerical "
-                "instability. Try lr *= 0.1.",
-                min_loss, max_loss,
-            )
+            _log(f"ABORT: Training loss exploded "
+                 f"(min={min_loss:.4f}, max={max_loss:.4f}). "
+                 f"Likely cause: learning rate too high or numerical "
+                 f"instability. Try lr *= 0.1.")
             return False
 
         # Check: second half of canary epochs shows improvement over peak.
@@ -290,12 +298,10 @@ class CarbonTrainer(CheckpointMixin):
         second_half_min = min(train_losses[mid:])
         first_half_max = max(train_losses[:mid])
         if second_half_min > first_half_max * 1.5:
-            logger.error(
-                "ABORT: Training loss not recovering after warmup "
-                "(first-half peak=%.4f, second-half min=%.4f). "
-                "Likely cause: bad learning rate or dead gradients.",
-                first_half_max, second_half_min,
-            )
+            _log(f"ABORT: Training loss not recovering after warmup "
+                 f"(first-half peak={first_half_max:.4f}, "
+                 f"second-half min={second_half_min:.4f}). "
+                 f"Likely cause: bad learning rate or dead gradients.")
             return False
 
         # Check: val loss not monotonically increasing across ALL epochs
@@ -303,18 +309,13 @@ class CarbonTrainer(CheckpointMixin):
             val_losses[i] > val_losses[i - 1]
             for i in range(1, len(val_losses))
         ):
-            logger.error(
-                "ABORT: Val loss monotonically increasing (%.4f -> %.4f). "
-                "Likely cause: severe overfitting or model too large. "
-                "Try increasing dropout or reducing model size.",
-                val_losses[0], val_losses[-1],
-            )
+            _log(f"ABORT: Val loss monotonically increasing "
+                 f"({val_losses[0]:.4f} -> {val_losses[-1]:.4f}). "
+                 f"Likely cause: severe overfitting or model too large. "
+                 f"Try increasing dropout or reducing model size.")
             return False
 
-        logger.info(
-            "--- viability check passed (train: %.4f -> %.4f, "
-            "val: %.4f -> %.4f) ---",
-            train_losses[0], train_losses[-1],
-            val_losses[0], val_losses[-1],
-        )
+        _log(f"--- viability check passed "
+             f"(train: {train_losses[0]:.4f} -> {train_losses[-1]:.4f}, "
+             f"val: {val_losses[0]:.4f} -> {val_losses[-1]:.4f}) ---")
         return True
