@@ -174,7 +174,7 @@ class CarbonConfig:
     checkpoint_interval_epochs: int = 5
 
     # -- Paths --
-    data_dir: str = "model/data"
+    data_dir: str = "data/training"
     data_file: str = "carbon_footprint.parquet"
     checkpoint_dir: str = "checkpoints/carbon_footprint"
     runs_log: str = "runs.jsonl"

@@ -103,29 +103,23 @@ node_modules/
 /layer_3_transport_scenarios_recover.parquet
 
 # Pipeline checkpoints (resumable state, not final data)
-data/datasets/pre-model/generated/**/checkpoints/
+data/data-creation/datasets/generated/**/checkpoints/
 *_recover.parquet
 
 # Discards and review artifacts
 *_discards.jsonl
 
 # Layer 6 analysis output
-data/data_generation/layer_6/analysis/output/
+data/data-creation/generation/layer_6/analysis/output/
 
 # Compiled C binaries
-data/data_generation/layer_6/layer6_calculate
-data/data_generation/layer_7/bin/
-data/data_calculation/layer6_calculate
-data/data_calculation/*/build/
+data/data-creation/generation/layer_6/layer6_calculate
+data/data-creation/generation/layer_7/bin/
+data/data-creation/calculation/*/build/
 
 # External databases (too large for git, download separately)
-data/extern/*.zolca
-data/extern/AWARE_v1_2_setup_openlca_2024-10-30.json
-
-# Non-final model datasets (redundant with final/)
-data/datasets/model/*.csv
-data/datasets/model/*.parquet
-!data/datasets/model/final/
+data/data-creation/extern/*.zolca
+data/data-creation/extern/AWARE_v1_2_setup_openlca_2024-10-30.json
 
 # Model training artifacts (checkpoints, experiment logs, weights)
 model/*/checkpoints/
