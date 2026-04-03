@@ -57,7 +57,12 @@ class CarbonDataset(Dataset):
         self.records: List[Dict[str, Any]] = []
         for idx in range(len(df)):
             self.records.append(
-                parse_record(df.iloc[idx], vocab, max_mat, max_sl)
+                parse_record(
+                    df.iloc[idx], vocab, max_mat, max_sl,
+                    coord_scales=config.coord_scales,
+                    n_dist_bins=config.n_dist_bins,
+                    n_step_pair_dists=config.n_step_pair_dists,
+                )
             )
         logger.info("Parsed %d records", len(self.records))
 
@@ -101,6 +106,13 @@ class CarbonDataset(Dataset):
             ),
             "haversine_mean": torch.tensor(
                 r["haversine_mean"], dtype=torch.float32
+            ),
+            # Distance histogram and step-pair distances
+            "distance_histogram": torch.from_numpy(
+                r["distance_histogram"]
+            ),
+            "step_pair_distances": torch.from_numpy(
+                r["step_pair_distances"]
             ),
             # Privileged features
             "priv_road_km": torch.tensor(

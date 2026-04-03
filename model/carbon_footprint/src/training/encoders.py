@@ -23,9 +23,13 @@ class MaterialEncoder(nn.Module):
         material_pcts [B, max_mat]  -- percentage [0,1]
         material_mask [B, max_mat]  -- True where valid
 
-    Output: [B, material_out]
+    Output: (pooled [B, material_out], pre_pooled [B, M, material_out])
+        pooled: masked-mean-pooled representation (with missing fallback).
+        pre_pooled: per-material token embeddings AFTER self-attention,
+            before pooling. Used by MaterialLocAssignment for cross-attention.
 
-    When all materials are masked, returns a learned missing embedding.
+    When all materials are masked, pooled uses a learned missing embedding
+    and pre_pooled is zeroed.
     """
 
     def __init__(self, config: CarbonConfig) -> None:
@@ -55,7 +59,7 @@ class MaterialEncoder(nn.Module):
         material_ids: torch.Tensor,
         material_pcts: torch.Tensor,
         material_mask: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         e = self.emb(material_ids)                            # [B, M, emb]
         pcts = material_pcts.unsqueeze(-1)                    # [B, M, 1]
         x = torch.cat([e, pcts], dim=-1)                      # [B, M, emb+1]
@@ -67,6 +71,9 @@ class MaterialEncoder(nn.Module):
                                      key_padding_mask=key_padding_mask)
         x = self.norm(x + attn_out)
         x = x * material_mask.unsqueeze(-1).float()            # zero padding
+
+        # Keep pre-pooled tokens for MaterialLocAssignment
+        pre_pooled = x                                         # [B, M, out]
 
         # Masked mean pooling
         mask_sum = material_mask.sum(dim=1, keepdim=True).clamp(min=1).float()
@@ -80,7 +87,7 @@ class MaterialEncoder(nn.Module):
                 self.missing_material.unsqueeze(0).expand(pooled.shape[0], -1),
                 pooled,
             )
-        return pooled
+        return pooled, pre_pooled
 
 
 class ProductEncoder(nn.Module):

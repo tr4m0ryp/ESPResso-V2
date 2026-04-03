@@ -64,8 +64,8 @@ class ThreeGroupLoss(nn.Module):
         self.curriculum_warmup_epochs = config.curriculum_warmup_epochs
         self.max_epochs = config.max_epochs
         self.min_head_weight = config.min_head_weight
+        self.rkd_alpha = config.rkd_alpha
 
-        # Per-head loss function dispatch
         self.head_loss_fns = {}
         for name in self.HEAD_NAMES:
             loss_type = config.head_loss_types[name]
@@ -76,13 +76,7 @@ class ThreeGroupLoss(nn.Module):
     def _compute_main_loss(
         self, preds: torch.Tensor, batch: Dict[str, torch.Tensor],
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Dict[str, float]]:
-        """Analytical UW-SO with DB-MTL log-normalization over 4 heads.
-
-        Returns:
-            main_loss: scalar weighted loss.
-            per_head: dict of per-head scalar losses (detached).
-            weights: dict of per-head UW-SO weights (detached).
-        """
+        """Analytical UW-SO with DB-MTL log-normalization over 4 heads."""
         target_keys = [
             "cf_raw_materials", "cf_transport", "cf_processing", "cf_packaging",
         ]
@@ -101,11 +95,7 @@ class ThreeGroupLoss(nn.Module):
         log_losses = torch.log1p(losses)
 
         # Analytical UW-SO: inverse-loss weighting with temperature.
-        # Minimum weight floor prevents packaging (near-constant, tiny loss)
-        # from being starved of gradient signal. Without this floor, the
-        # softmax assigns ~0.01 weight to packaging while the other heads
-        # get ~0.33 each, causing the trunk to optimize exclusively for
-        # the higher-loss heads and destroying the packaging mapping.
+        # Weight floor prevents low-loss heads (packaging) from gradient starvation.
         inv = 1.0 / (log_losses.detach() + 1e-6)
         weights = F.softmax(inv / self.temperature, dim=0)
         if self.min_head_weight > 0:
@@ -187,6 +177,35 @@ class ThreeGroupLoss(nn.Module):
                 + (self.distill_peak - self.distill_floor)
                 * (1.0 - decay_progress))
 
+    def _relational_distill(
+        self, proxy_t: torch.Tensor, transport_emb: torch.Tensor,
+    ) -> torch.Tensor:
+        """Composite distillation: instance MSE + pairwise distance preservation.
+
+        For B < 4 (smoke test / tiny batches), pairwise distances are
+        degenerate so we fall back to instance-only MSE.
+        Note: torch.cdist produces a [B, B] matrix. At B=1024 this is 4MB
+        float32 -- fine for A100-80GB but worth noting for smaller GPUs.
+        """
+        teacher = transport_emb.detach()
+        L_instance = F.mse_loss(proxy_t, teacher)
+
+        B = proxy_t.size(0)
+        if B < 4:
+            return L_instance
+
+        # Pairwise L2 distances, mean-normalized to handle scale mismatch
+        t_dists = torch.cdist(teacher, teacher, p=2)
+        s_dists = torch.cdist(proxy_t, proxy_t, p=2)
+        t_dists = t_dists / (t_dists.mean() + 1e-8)
+        s_dists = s_dists / (s_dists.mean() + 1e-8)
+
+        # Huber loss on normalized distances (robust to outlier pairs)
+        L_relational = F.smooth_l1_loss(s_dists, t_dists)
+
+        alpha = self.rkd_alpha
+        return alpha * L_instance + (1.0 - alpha) * L_relational
+
     def _compute_structural_loss(
         self,
         model_output: Dict[str, Any],
@@ -203,31 +222,20 @@ class ThreeGroupLoss(nn.Module):
 
         distill_c = self._distill_coeff(epoch)
 
-        # Distillation loss
+        # Distillation loss (relational KD when privileged embeddings available)
         transport_emb = model_output.get("transport_emb")
         if transport_emb is not None:
-            l_distill = F.mse_loss(proxy_t, transport_emb.detach())
+            l_distill = self._relational_distill(proxy_t, transport_emb)
         else:
             l_distill = torch.tensor(0.0, device=device)
 
-        # Diversity loss: (1 + cos_sim) / 2 maps [-1, 1] -> [0, 1].
-        # Raw cosine_similarity can go negative when proxies diverge,
-        # which made the total loss negative. This remapping keeps
-        # L_div in [0, 1] while preserving the same gradient direction:
-        # minimizing L_div still pushes cosine similarity toward -1.
+        # Diversity: (1 + cos_sim)/2 maps [-1,1]->[0,1], prevents negative loss
         raw_cos = F.cosine_similarity(proxy_t, proxy_p, dim=-1).mean()
         l_div = (1.0 + raw_cos) / 2.0
 
-        # Attention entropy regularization: penalize HIGH entropy (uniform
-        # attention). We want the CLS tokens to attend selectively to
-        # informative step-location pairs, not spread weight uniformly.
-        # L_entropy = max(0, entropy - target) so it only fires when
-        # entropy is above the threshold (too uniform).
-        attn_entropy = model_output.get("attn_entropy",
-                                        torch.tensor(0.0, device=device))
-        # Target: ~1.5 nats. For 10 tokens, max entropy is ln(10)=2.3.
-        # 1.5 nats means attending to ~4-5 tokens with unequal weights,
-        # which is appropriate for supply chain step sequences.
+        # Entropy reg: penalize uniform attention (high entropy > 1.5 nats)
+        attn_entropy = model_output.get(
+            "attn_entropy", torch.tensor(0.0, device=device))
         target_entropy = 1.5
         l_entropy = F.relu(attn_entropy - target_entropy)
 
@@ -252,18 +260,7 @@ class ThreeGroupLoss(nn.Module):
         batch: Dict[str, torch.Tensor],
         epoch: int,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        """Compute total loss from three groups.
-
-        Args:
-            model_output: Dict with preds [B,4], proxy_transport, proxy_processing,
-                transport_emb, aux_distance_pred, aux_mode_pred, aux_weight_pred.
-            batch: Dict with target and privileged feature tensors.
-            epoch: Current epoch number (for scheduling).
-
-        Returns:
-            total_loss: Scalar combined loss.
-            loss_dict: Per-component losses, weights, and coefficients.
-        """
+        """Compute total loss from three groups."""
         preds = model_output["preds"]
 
         main_loss, per_head, weights = self._compute_main_loss(preds, batch)
@@ -276,11 +273,7 @@ class ThreeGroupLoss(nn.Module):
 
         total_loss = main_loss + aux_loss + struct_loss
 
-        # Safety floor: total loss must never be negative. All three groups
-        # are designed to be non-negative individually, but floating-point
-        # accumulation could theoretically produce a tiny negative value.
-        # clamp preserves gradients when total_loss > 0 (identity), and
-        # zeros the gradient only in the degenerate negative case.
+        # Safety floor: clamp prevents negative total from float accumulation
         total_loss = total_loss.clamp(min=0.0)
 
         loss_dict = {
