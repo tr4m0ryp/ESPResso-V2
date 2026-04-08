@@ -600,7 +600,6 @@ SMOKE_TEST=1 python -m model.water_footprint.src.training.trainer
 - **Gemini 3.1 Pro (Google)** -- Fallback LLM used during Layer 6 enrichment when the UvA API gateway was unavailable
 - **[UvA AI Chat](https://aichat.uva.nl/)** -- University of Amsterdam AI platform providing LLM API access
 - **PyTorch** -- Deep learning framework for both prediction models
-- **University of Amsterdam** -- Academic institution and infrastructure provider
 
 ### Key References
 
