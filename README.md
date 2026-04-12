@@ -259,13 +259,13 @@ Residual Trunk (192-dim, 3 blocks, LN + Linear + GELU + Dropout)
 
 ### Key Components
 
-**Dual CLS Tokens.** The StepLocProxy prepends two learned CLS tokens to the step-location sequence before self-attention. CLS_transport is distilled toward the privileged TransportEncoder output; CLS_processing is free, trained only by the processing head's task loss. This prevents transport optimization from corrupting processing-relevant attention patterns.
+**Dual CLS Tokens.** The StepLocProxy prepends two learned CLS tokens to the step-location sequence before self-attention. CLS_transport is distilled toward the privileged TransportEncoder output; CLS_processing is free, trained only by the processing head's task loss. This prevents transport optimization from corrupting processing-relevant attention patterns. After extraction, both CLS outputs are divided by `sqrt(num_valid_tokens)` to normalize magnitude across varying sequence lengths -- without this, a 1-token sequence produces a much higher-magnitude CLS output than a 5-token sequence due to concentrated attention.
 
 **Multi-Scale Coordinate Encoding.** Geographic coordinates are encoded as 32-dimensional multi-scale sinusoidal features across 8 frequency scales, capturing both continental-scale and city-level spatial patterns.
 
 **Gated Geo Fusion.** 27 geographic features (3 haversine statistics + 16-bin pairwise distance histogram + 8 top-K step-pair distances) pass through a learned sigmoid gate controlling per-dimension mixing with the CLS attention output. This prevents the projection MLP from routing everything through scalar statistics and ignoring the attention mechanism.
 
-**MaterialLocAssignment.** Cross-attention with Sinkhorn normalization (3 iterations) solves the bipartite assignment problem: materials and locations are specified separately (not which material is processed where). The module learns soft doubly-stochastic assignments, producing a 32-dim transport-relevant feature for the transport head.
+**MaterialLocAssignment.** Cross-attention with Sinkhorn normalization (3 iterations) solves the bipartite assignment problem: materials and locations are specified separately (not which material is processed where). The module learns soft doubly-stochastic assignments, producing a 32-dim transport-relevant feature that is LayerNorm-normalized before reaching the transport head. A learned dustbin row and column are appended before Sinkhorn to prevent degenerate 1x1 matrices (single material, single location) from trivially returning weight 1.0 -- the dustbin absorbs some assignment mass, ensuring even sparse products produce properly scaled features.
 
 **LUPI Distillation Schedule.** The privileged TransportEncoder sees ground-truth per-leg distances during training. A composite distillation loss (RKD with `rkd_alpha=0.5` blending instance MSE and pairwise distance preservation) transfers this knowledge to the proxy. The distillation coefficient warms up over 10 epochs, peaks at 0.10, then decays linearly to a floor of 0.02.
 
@@ -399,13 +399,13 @@ Note the water model's tier distribution is heavily skewed toward degraded tiers
 
 | Component | MAE | R^2 | SMAPE |
 |-----------|-----|-----|-------|
-| Raw materials | 0.229 kgCO2e | 0.992 | 6.2% |
-| Processing | 0.307 kgCO2e | 0.971 | 9.7% |
-| Transport | 0.048 kgCO2e | 0.691 | 18.6% |
-| Packaging | 0.010 kgCO2e | 0.964 | 4.2% |
-| **Total** | **0.479 kgCO2e** | **0.988** | **6.3%** |
+| Raw materials | 0.235 kgCO2e | 0.991 | 6.1% |
+| Processing | 0.308 kgCO2e | 0.973 | 9.8% |
+| Transport | 0.046 kgCO2e | 0.665 | 18.1% |
+| Packaging | 0.010 kgCO2e | 0.969 | 4.0% |
+| **Total** | **0.489 kgCO2e** | **0.988** | **6.4%** |
 
-Transport is the weakest head (R^2 = 0.691) -- expected, because the proxy must infer transport distances from indirect geographic signals without access to actual per-leg route data at inference time. The LUPI distillation provides a substantial improvement over a naive proxy (which would be near-random), but transport remains inherently harder to estimate than material-driven components.
+Transport is the weakest head (R^2 = 0.665) -- expected, because the proxy must infer transport distances from indirect geographic signals without access to actual per-leg route data at inference time. The LUPI distillation provides a substantial improvement over a naive proxy (which would be near-random), but transport remains inherently harder to estimate than material-driven components.
 
 ### Tier Degradation
 
@@ -456,11 +456,11 @@ Overall tier degradation factor: 2.4x. The confidence gates play a critical role
 | Parameters | ~546K | ~469K |
 | Output heads | 4 (raw, transport, processing, packaging) | 3 (raw, processing, packaging) |
 | Total R^2 | 0.988 | 0.969 |
-| Total MAE | 0.479 kgCO2e | 0.587 m^3 world-eq |
+| Total MAE | 0.489 kgCO2e | 0.587 m^3 world-eq |
 | Geographic sensitivity | Low (2-3x variance) | High (40-100x variance via AWARE) |
 | Key mechanism | LUPI distillation for transport proxy | Confidence-gated cross-attention for geography |
 | Trunk dimension | 192, 3 residual blocks | 128, 2 residual blocks |
-| Special modules | MaterialLocAssignment (Sinkhorn), TransportEncoder | GeoAttentionBlock, ConfidenceGate |
+| Special modules | MaterialLocAssignment (Sinkhorn + dustbin), TransportEncoder | GeoAttentionBlock, ConfidenceGate |
 | Tier A-B strategy | Learned missing embeddings, packaging shortcut | Prior-heavy gates (bias -2.0), auxiliary weight |
 | Tier distribution | A:10%, B:15%, C:20%, D:20%, E:20%, F:15% | A:35%, B:25%, C:15%, D:10%, E:10%, F:5% |
 | Dataset | 49,732 records (70/15/15 split) | 49,732 records (70/15/15 split) |
