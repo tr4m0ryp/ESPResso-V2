@@ -197,6 +197,13 @@ class StepLocProxy(nn.Module):
         cls_transport_out = tokens[:, 0, :]                # [B, D]
         cls_processing_out = tokens[:, 1, :]               # [B, D]
 
+        # Divisive normalization: CLS magnitude scales with token count
+        # (concentrated attention on 1 token vs distributed on 5). Divide
+        # by sqrt(num_valid) to equalize magnitude across sequence lengths.
+        num_valid = step_loc_mask.sum(dim=1, keepdim=True).clamp(min=1).float()
+        cls_transport_out = cls_transport_out / num_valid.sqrt()
+        cls_processing_out = cls_processing_out / num_valid.sqrt()
+
         # Gated geo fusion: the gate controls per-dimension mixing between
         # CLS attention output and geographic features (3 haversine stats +
         # 16-bin distance histogram + 8 step-pair distances = 27 features).

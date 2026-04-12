@@ -111,6 +111,10 @@ class MaterialLocAssignment(nn.Module):
             torch.randn(config.assign_out) * 0.02
         )
 
+        # Dustbin (slack) logit bias for Sinkhorn: prevents degenerate 1x1
+        # pass-through by ensuring at least 2x2 effective matrix.
+        self.dustbin_score = nn.Parameter(torch.zeros(1))
+
     def forward(
         self,
         mat_tokens: torch.Tensor,
@@ -129,9 +133,30 @@ class MaterialLocAssignment(nn.Module):
         logits = torch.bmm(mat_q, loc_k.transpose(1, 2)) * self.scale
         # logits: [B, M, N]
 
-        # Sinkhorn normalization for doubly-stochastic assignment
-        weights = _sinkhorn(logits, mat_mask, loc_mask, self.sinkhorn_iters)
-        # weights: [B, M, N]
+        # Dustbin padding: prevents 1x1 Sinkhorn degeneracy where a single
+        # valid material-location pair gets weight 1.0 (full pass-through).
+        # An extra row and column absorb weight, reducing real entries.
+        n_m, n_l = logits.shape[1], logits.shape[2]
+        device = logits.device
+        db = self.dustbin_score
+        padded = torch.cat([
+            torch.cat([logits, db.expand(B, n_m, 1)], dim=2),
+            torch.cat([db.expand(B, 1, n_l), db.expand(B, 1, 1)], dim=2),
+        ], dim=1)  # [B, M+1, N+1]
+        mat_mask_db = torch.cat([
+            mat_mask,
+            torch.ones(B, 1, dtype=torch.bool, device=device),
+        ], dim=1)
+        loc_mask_db = torch.cat([
+            loc_mask,
+            torch.ones(B, 1, dtype=torch.bool, device=device),
+        ], dim=1)
+
+        # Sinkhorn on padded matrix, then discard dustbin entries
+        weights = _sinkhorn(
+            padded, mat_mask_db, loc_mask_db, self.sinkhorn_iters,
+        )
+        weights = weights[:, :n_m, :n_l]  # [B, M, N]
 
         # Weighted location features per material
         assigned_locs = torch.bmm(weights, loc_v)  # [B, M, D_a]
