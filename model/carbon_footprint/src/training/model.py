@@ -55,6 +55,7 @@ class CarbonModel(nn.Module):
 
         # -- Material-location cross-attention assignment --
         self.mat_loc_assign = MaterialLocAssignment(config)
+        self.mat_loc_norm = nn.LayerNorm(config.assign_out)
 
         # -- Learned missing embeddings (for tier masking) --
         self.missing_material = nn.Parameter(
@@ -276,7 +277,8 @@ class CarbonModel(nn.Module):
         )  # [B, assign_out]
 
         # -- Output heads --
-        # Transport head gets trunk output + mat-loc assignment feature
+        # Normalize mat_loc_feature to prevent sparse-product amplification
+        mat_loc_feature = self.mat_loc_norm(mat_loc_feature)
         transport_features = torch.cat(
             [h, mat_loc_feature], dim=-1,
         )  # [B, trunk_hidden + assign_out]
